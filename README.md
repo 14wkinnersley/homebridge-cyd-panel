@@ -9,6 +9,12 @@ ESPHome powered Home Assistant control panel using the popular Cheap Yellow Disp
 A 3D-printable enclosure with adjustable tilt for an ESP32 2.8" ILI9341 touchscreen, powered by ESPHome + LVGL and integrated with Home Assistant.  
 Includes ready-to-flash YAML configs for the ESP32-2432S028 (Cheap Yellow Display) and a standalone ILI9341 + external ESP32 wiring variant.
 
+> **Using Homebridge instead of Home Assistant?** The stock configs below assume
+> Home Assistant. For a **Homebridge** setup (no HA, no MQTT — via the Homebridge
+> UI REST API), see **[esphome/HOMEBRIDGE.md](esphome/HOMEBRIDGE.md)**. Start with
+> the [link-test config](esphome/homebridge/link-test.yaml) to validate the
+> connection, then port the full UI.
+
 Multiple mounting options are supported:
 
 - Desk Mount – for tabletop installation
