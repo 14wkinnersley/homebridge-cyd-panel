@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Flash SmartDisplay — Homebridge CYD Panel</title>
+<title>Flash SmartDisplay - Homebridge CYD Panel</title>
 <meta name="description" content="Flash the SmartDisplay Homebridge touch-panel firmware onto a Cheap Yellow Display, right from your browser. No compiling.">
 <!-- ESP Web Tools (pinned). Provides the browser flasher + Improv Wi-Fi setup. -->
 <script type="module" src="https://unpkg.com/esp-web-tools@10.2.1/dist/web/install-button.js?module"></script>
@@ -22,8 +22,8 @@
   }
   .wrap{max-width:720px; margin:0 auto; padding:56px 20px 80px}
   header{text-align:center; margin-bottom:34px}
-  header .kicker{font-size:13px; font-weight:600; letter-spacing:.02em; color:var(--accent); margin:0 0 10px}
-  h1{font-size:40px; line-height:1.08; margin:0; font-weight:700; letter-spacing:-.03em}
+  header .kicker{font-size:13px; font-weight:600; letter-spacing:.02em; text-indent:.02em; color:var(--accent); margin:0 0 10px}
+  h1{font-size:40px; line-height:1.08; margin:0; font-weight:700; letter-spacing:-.03em; text-indent:-.03em}
   header p{font-size:18px; color:var(--muted); margin:14px auto 0; max-width:34em}
   .card{background:var(--card); border:1px solid var(--line); border-radius:20px; padding:26px; margin:18px 0; box-shadow:var(--shadow)}
   .card h2{font-size:20px; margin:0 0 6px; font-weight:650; letter-spacing:-.01em}
@@ -72,7 +72,7 @@
   <header>
     <p class="kicker">CHEAP YELLOW DISPLAY · HOMEBRIDGE</p>
     <h1>Flash SmartDisplay</h1>
-    <p>Turn an ESP32-2432S028 “Cheap Yellow Display” into a Homebridge wall panel — flashed from your browser. No compiling, no ESPHome install.</p>
+    <p>Turn an ESP32-2432S028 “Cheap Yellow Display” into a Homebridge wall panel, flashed from your browser. No compiling, no ESPHome install.</p>
   </header>
 
   <div id="unsupported">
@@ -90,7 +90,7 @@
     <p class="sub">Three quick things:</p>
     <ol class="steps">
       <li>A <b>Cheap Yellow Display</b> (ESP32-2432S028) and a USB cable that carries data.</li>
-      <li>A <b>desktop with Chrome or Edge</b> — the flashing step doesn’t work on phones.</li>
+      <li>A <b>desktop with Chrome or Edge</b> (the flashing step doesn’t work on phones).</li>
       <li><b>Homebridge</b> running on your network with <b>Accessory Control (“insecure mode”)</b>
         enabled. You’ll point the panel at it after flashing.</li>
     </ol>
@@ -98,21 +98,21 @@
 
   <div class="card">
     <h2>Install the firmware</h2>
-    <p class="sub">Most Cheap Yellow Displays use the <b>ST7789</b> controller — start here.</p>
+    <p class="sub">Most Cheap Yellow Displays use the <b>ST7789</b> controller, so start here.</p>
     <ol class="steps">
       <li>Plug the display into your computer with a USB data cable.</li>
       <li>Click <b>Install</b> and pick the serial port (often labelled <code>CP210x</code>,
         <code>CH340</code>, or <code>USB Serial</code>).</li>
-      <li>When flashing finishes, the browser asks for your <b>Wi-Fi name and password</b> —
+      <li>When flashing finishes, the browser asks for your <b>Wi-Fi name and password</b>;
         enter them and the panel joins your network.</li>
       <li>Click <b>Visit Device</b> to open <code>http://&lt;panel-ip&gt;/setup</code> and add
         your Homebridge details + tiles.</li>
     </ol>
     <div class="install">
       <esp-web-install-button manifest="/firmware/st7789/manifest.json">
-        <button slot="activate" class="btn">Install — ST7789</button>
+        <button slot="activate" class="btn">Install ST7789</button>
         <span slot="unsupported"></span>
-        <span slot="not-allowed" class="muted">Flashing isn’t allowed here — make sure the page is on <code>https://</code>.</span>
+        <span slot="not-allowed" class="muted">Flashing isn’t allowed here. Make sure the page is on <code>https://</code>.</span>
       </esp-web-install-button>
       <span class="muted">Takes about a minute.</span>
     </div>
@@ -123,12 +123,12 @@
     <p class="sub">
       On first boot the panel shows a <b>red / green / blue test screen</b> with the build name.
       If those bars look torn, shifted, or the colors are wrong, your board uses the other
-      controller — just re-flash the <b>ILI9341</b> build below. Re-flashing is safe and takes
+      controller, so just re-flash the <b>ILI9341</b> build below. Re-flashing is safe and takes
       about a minute.
     </p>
     <div class="install">
       <esp-web-install-button manifest="/firmware/ili9341/manifest.json">
-        <button slot="activate" class="btn secondary">Install — ILI9341</button>
+        <button slot="activate" class="btn secondary">Install ILI9341</button>
         <span slot="unsupported"></span>
       </esp-web-install-button>
     </div>
@@ -142,7 +142,7 @@
         <b>username</b>, <b>password</b>, and a <b>room name</b>. Tap <b>Save</b>.</li>
       <li>Tap <b>Load devices from Homebridge</b> and pick a device for each tile.</li>
       <li>Set each tile’s title and type, tick <b>Show this tile</b>, and <b>Save</b>.
-        Changes apply live — no reflash.</li>
+        Changes apply live, no reflash.</li>
     </ol>
     <hr class="divider">
     <div class="callout">
