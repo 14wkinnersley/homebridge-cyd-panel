@@ -15,42 +15,42 @@ static const char *const DEFAULT_CFG =
 static const char SETUP_HTML[] = R"HTML(<!doctype html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Panel Setup</title>
 <style>
-:root{--bg:#0b0f17;--card:#151b27;--card2:#0f1522;--line:#243049;--muted:#8b98b0;--text:#e8edf5;--accent:#0a84ff;--ok:#30d158}
+:root{--bg:#f5f5f7;--card:#ffffff;--line:#d2d2d7;--muted:#6e6e73;--text:#1d1d1f;--accent:#0071e3;--ok:#1d9d55;--shadow:0 1px 2px rgba(0,0,0,.05),0 10px 30px rgba(0,0,0,.06)}
 *{box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;margin:0;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased}
-.wrap{max-width:600px;margin:0 auto;padding:24px 16px 120px}
-.hdr{display:flex;align-items:center;gap:12px;margin:6px 2px 20px}
-.hdr .ic{font-size:30px;line-height:1}
-.hdr h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.02em}
-.hdr p{margin:3px 0 0;font-size:13px;color:var(--muted)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin:14px 0}
-.card>h2{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:0 0 8px;font-weight:600}
+.wrap{max-width:600px;margin:0 auto;padding:28px 16px 120px}
+.hdr{margin:4px 2px 22px}
+.hdr h1{font-size:26px;margin:0;font-weight:700;letter-spacing:-.02em}
+.hdr p{margin:5px 0 0;font-size:14px;color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;margin:16px 0;box-shadow:var(--shadow)}
+.card>h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px;font-weight:600}
 label{display:block;margin:12px 0 5px;font-size:13px;color:var(--muted)}
-input,select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--text);font-size:15px;outline:none;transition:border-color .15s}
-input:focus,select:focus{border-color:var(--accent)}
+input,select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--text);font-size:15px;outline:none;transition:border-color .15s,box-shadow .15s}
+input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,113,227,.15)}
 .row{display:flex;gap:10px}.row>*{flex:1;min-width:0}
-.tile{border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0;background:var(--card2)}
+.tile{border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0;background:#f5f5f7}
 .tile .th{display:flex;align-items:center;gap:9px;margin-bottom:2px}
 .badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:7px;background:var(--accent);color:#fff;font-size:12px;font-weight:700}
 .tile .th b{font-size:14px}
 .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
 .chk{display:flex;align-items:center;gap:9px;margin-top:12px;font-size:14px;color:var(--text)}
-.chk input{width:auto;transform:scale(1.15)}
-.ghost{width:100%;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--card2);color:var(--accent);font-size:14px;font-weight:600;cursor:pointer}
+.chk input{width:auto;transform:scale(1.15);accent-color:var(--accent)}
+.ghost{width:100%;padding:12px;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer}
+.ghost:active{background:#f0f0f2}
 .hint{font-size:12px;color:var(--muted);margin:8px 2px 2px}
 details{margin-top:10px}
 details summary{cursor:pointer;color:var(--muted);font-size:12px;list-style:none;user-select:none}
 details summary::-webkit-details-marker{display:none}
 details summary:before{content:"\25B8 ";}
 details[open] summary:before{content:"\25BE ";}
-.bar{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(14px + env(safe-area-inset-bottom));background:linear-gradient(180deg,rgba(11,15,23,0),var(--bg) 34%)}
+.bar{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(14px + env(safe-area-inset-bottom));background:linear-gradient(180deg,rgba(245,245,247,0),var(--bg) 34%)}
 .bar .inner{max-width:600px;margin:0 auto}
-.save{width:100%;padding:14px;border:0;border-radius:12px;background:var(--accent);color:#fff;font-size:16px;font-weight:600;cursor:pointer}
-.save:active{opacity:.85}
+.save{width:100%;padding:14px;border:0;border-radius:12px;background:var(--accent);color:#fff;font-size:16px;font-weight:600;cursor:pointer;box-shadow:0 6px 16px rgba(0,113,227,.28)}
+.save:active{opacity:.9}
 #msg{text-align:center;font-size:13px;margin-top:8px;min-height:16px}
 .ok{color:var(--ok);font-weight:600}
 </style></head><body><div class="wrap">
-<div class="hdr"><div class="ic">&#127968;</div><div><h1>Smart Panel Setup</h1><p>Configure your Homebridge wall panel</p></div></div>
+<div class="hdr"><h1>Smart Panel Setup</h1><p>Configure your Homebridge wall panel</p></div>
 
 <div class="card"><h2>Homebridge</h2>
 <label>Room name (shown top-left on the panel)</label><input id="room" placeholder="Office">
@@ -60,7 +60,7 @@ details[open] summary:before{content:"\25BE ";}
 </div>
 
 <div class="card"><h2>Tiles</h2>
-<button type="button" class="ghost" onclick="loadDevices()">&#128269;&nbsp; Load devices from Homebridge</button>
+<button type="button" class="ghost" onclick="loadDevices()">Load devices from Homebridge</button>
 <div id="dmsg" class="hint">Enter your URL + login and tap Save first, then load the list to pick devices by name.</div>
 <div id="tiles"></div>
 </div>

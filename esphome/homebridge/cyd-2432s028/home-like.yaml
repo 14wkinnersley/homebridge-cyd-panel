@@ -5,17 +5,17 @@
 #
 # Target hardware
 # - Cheap Yellow Display (ESP32-2432S028 or compatible)
-# - Built-in ILI9341 320x240 display
+# - Built-in SPI display: ST7789V (default) or ILI9341 via DISPLAY_MODEL
 # - Built-in XPT2046 touchscreen
 #
 # What this config does
 # - Renders a wallpaper background + a 2x3 grid of “tiles” (LVGL).
 # - Each tile shows: icon (MDI font), title, and a value line.
-# - Tile taps publish a short-lived text_sensor event (smartdisplay_action)
-#   so you can build Home Assistant automations on top.
-# - Optional: the device can also call Home Assistant services directly
-#   (toggle lights/switches/fans/covers, activate scenes/scripts, set fan preset,
-#   set light brightness, set fan percentage, set cover position).
+# - Talks to Homebridge over the Homebridge UI REST API (see hb_engine.yaml):
+#   reads accessory state and sends control commands (On / Brightness / Hue /
+#   Saturation / ColorTemperature / RotationSpeed / TargetPosition /
+#   TargetTemperature / TargetHeatingCoolingState).
+# - Tile taps also publish a short-lived text_sensor event (smartdisplay_action).
 #
 # The layout is inspired by common modern smart home UIs.
 #
@@ -38,15 +38,16 @@
 #   auto | brightness | percentage | preset | text
 #
 # Notes
-# - DIRECT_ACTIONS="true" enables direct HA service calls from the device.
+# - DIRECT_ACTIONS="true" sends control commands to Homebridge directly.
 #   If "false", only the smartdisplay_action event is emitted.
 # - In auto mode, values and long-press behavior are derived from TILE*_TYPE:
 #   light -> brightness, fan -> percentage/preset, scene/script -> text
 #
-# What you must adapt before flashing
-# 1) Secrets: api.encryption.key, ota.password, WiFi credentials (prefer secrets.yaml)
+# What you can adapt (all optional; a stock flash + /setup works out of the box)
+# 1) No secrets required: Wi-Fi is entered in the browser while flashing (Improv)
+#    or via the captive-portal fallback AP "SmartDisplay Setup".
 # 2) Pins, touch calibration and transform if your CYD variant differs
-# 3) TILE*_ENTITY / TILE*_STATE_ENTITY: Home Assistant entity IDs you want to control/mirror
+# 3) DISPLAY_MODEL: ST7789V (default) or ILI9341 if the panel looks garbled
 # 4) Orientation + touch calibration:
 #    - rotation is set via LVGL_ROTATION in the ORIENTATION presets (LVGL
 #      rotates display + touch together, ESPHome 2026.4+)
@@ -55,7 +56,13 @@
 
 substitutions:
 
-  DIRECT_ACTIONS: "true"                           # true = call Home Assistant services directly, false = only emit action events
+  # Display controller. Default ST7789V (most CYDs). The browser flasher's
+  # ILI9341 fallback build is produced by overriding these in CI:
+  #   DISPLAY_MODEL=ILI9341  INVERT_COLORS=true
+  DISPLAY_MODEL: "ST7789V"
+  INVERT_COLORS: "false"
+
+  DIRECT_ACTIONS: "true"                           # true = send control commands to Homebridge directly, false = only emit action events
   HB_BASE_URL: "http://homebridge.local:8581"
   HB_AUTH: "form"
   TILE1_ENABLED: "true"
@@ -96,7 +103,7 @@ substitutions:
   # ============================================================
 
   # --- basic settings ---
-  TILE1_ENTITY: "PASTE_uniqueId_of_device_1_here"                    # main Home Assistant entity for this tile
+  TILE1_ENTITY: "PASTE_uniqueId_of_device_1_here"                    # accessory uniqueId for this tile (overridden by /setup)
   TILE1_STATE_ENTITY: "PASTE_uniqueId_of_device_1_here"              # entity used for active/inactive state styling
   TILE1_TITLE: "Air Conditioner"                           # tile title shown in the UI
   TILE1_ICON: "\U000F001B"                         # MDI glyph — also add to MDI_GLYPH_* list above if not already there
@@ -134,9 +141,9 @@ substitutions:
   TILE1_CLIMATE_MIN_TEMP: "5.0"                  # minimum target temperature shown in the thermostat overlay
   TILE1_CLIMATE_MAX_TEMP: "30.0"                 # maximum target temperature shown in the thermostat overlay
   TILE1_CLIMATE_STEP: "0.5"                      # target temperature step size
-  TILE1_CLIMATE_CURRENT_TEMP_ATTRIBUTE: "current_temperature"  # HA attribute for current room temperature
-  TILE1_CLIMATE_TARGET_TEMP_ATTRIBUTE: "temperature"           # HA attribute for target temperature
-  TILE1_CLIMATE_HUMIDITY_ATTRIBUTE: "current_humidity"         # HA attribute for humidity; leave as-is if unavailable
+  TILE1_CLIMATE_CURRENT_TEMP_ATTRIBUTE: "current_temperature"  # legacy field, unused under Homebridge (state comes from the accessory)
+  TILE1_CLIMATE_TARGET_TEMP_ATTRIBUTE: "temperature"           # legacy field, unused under Homebridge (state comes from the accessory)
+  TILE1_CLIMATE_HUMIDITY_ATTRIBUTE: "current_humidity"         # legacy field, unused under Homebridge (state comes from the accessory)
 
 
   # ============================================================
@@ -144,7 +151,7 @@ substitutions:
   # ============================================================
 
   # --- basic settings ---
-  TILE2_ENTITY: "PASTE_uniqueId_of_device_2_here"                       # main Home Assistant entity for this tile
+  TILE2_ENTITY: "PASTE_uniqueId_of_device_2_here"                       # accessory uniqueId for this tile (overridden by /setup)
   TILE2_STATE_ENTITY: "PASTE_uniqueId_of_device_2_here"                 # entity used for active/inactive state styling
   TILE2_TITLE: "Office LED"                              # tile title shown in the UI
   TILE2_ICON: "\U000F1051"                         # MDI glyph — also add to MDI_GLYPH_* list above if not already there
@@ -182,9 +189,9 @@ substitutions:
   TILE2_CLIMATE_MIN_TEMP: "5.0"                  # minimum target temperature shown in the thermostat overlay
   TILE2_CLIMATE_MAX_TEMP: "30.0"                 # maximum target temperature shown in the thermostat overlay
   TILE2_CLIMATE_STEP: "0.5"                      # target temperature step size
-  TILE2_CLIMATE_CURRENT_TEMP_ATTRIBUTE: "current_temperature"  # HA attribute for current room temperature
-  TILE2_CLIMATE_TARGET_TEMP_ATTRIBUTE: "temperature"           # HA attribute for target temperature
-  TILE2_CLIMATE_HUMIDITY_ATTRIBUTE: "current_humidity"         # HA attribute for humidity; leave as-is if unavailable
+  TILE2_CLIMATE_CURRENT_TEMP_ATTRIBUTE: "current_temperature"  # legacy field, unused under Homebridge (state comes from the accessory)
+  TILE2_CLIMATE_TARGET_TEMP_ATTRIBUTE: "temperature"           # legacy field, unused under Homebridge (state comes from the accessory)
+  TILE2_CLIMATE_HUMIDITY_ATTRIBUTE: "current_humidity"         # legacy field, unused under Homebridge (state comes from the accessory)
 
 
   # ============================================================
@@ -192,7 +199,7 @@ substitutions:
   # ============================================================
 
   # --- basic settings ---
-  TILE3_ENTITY: "PASTE_uniqueId_of_device_3_here"                 # main Home Assistant entity for this tile
+  TILE3_ENTITY: "PASTE_uniqueId_of_device_3_here"                 # accessory uniqueId for this tile (overridden by /setup)
   TILE3_STATE_ENTITY: "PASTE_uniqueId_of_device_3_here"           # entity used for active/inactive state styling
   TILE3_TITLE: "Floor Lamp"                        # tile title shown in the UI
   TILE3_ICON: "\U000F08DD"                         # MDI glyph — also add to MDI_GLYPH_* list above if not already there
@@ -230,9 +237,9 @@ substitutions:
   TILE3_CLIMATE_MIN_TEMP: "5.0"                  # minimum target temperature shown in the thermostat overlay
   TILE3_CLIMATE_MAX_TEMP: "30.0"                 # maximum target temperature shown in the thermostat overlay
   TILE3_CLIMATE_STEP: "0.5"                      # target temperature step size
-  TILE3_CLIMATE_CURRENT_TEMP_ATTRIBUTE: "current_temperature"  # HA attribute for current room temperature
-  TILE3_CLIMATE_TARGET_TEMP_ATTRIBUTE: "temperature"           # HA attribute for target temperature
-  TILE3_CLIMATE_HUMIDITY_ATTRIBUTE: "current_humidity"         # HA attribute for humidity; leave as-is if unavailable
+  TILE3_CLIMATE_CURRENT_TEMP_ATTRIBUTE: "current_temperature"  # legacy field, unused under Homebridge (state comes from the accessory)
+  TILE3_CLIMATE_TARGET_TEMP_ATTRIBUTE: "temperature"           # legacy field, unused under Homebridge (state comes from the accessory)
+  TILE3_CLIMATE_HUMIDITY_ATTRIBUTE: "current_humidity"         # legacy field, unused under Homebridge (state comes from the accessory)
 
 
   # ============================================================
@@ -240,7 +247,7 @@ substitutions:
   # ============================================================
 
   # --- basic settings ---
-  TILE4_ENTITY: "PASTE_uniqueId_of_device_4_here"               # main Home Assistant entity for this tile
+  TILE4_ENTITY: "PASTE_uniqueId_of_device_4_here"               # accessory uniqueId for this tile (overridden by /setup)
   TILE4_STATE_ENTITY: "PASTE_uniqueId_of_device_4_here"         # entity used for active/inactive state styling  
   TILE4_TITLE: "Hue Lamp"                           # tile title shown in the UI
   TILE4_ICON: "\U000F0769"                         # MDI glyph — also add to MDI_GLYPH_* list above if not already there
@@ -278,9 +285,9 @@ substitutions:
   TILE4_CLIMATE_MIN_TEMP: "5.0"                  # minimum target temperature shown in the thermostat overlay
   TILE4_CLIMATE_MAX_TEMP: "30.0"                 # maximum target temperature shown in the thermostat overlay
   TILE4_CLIMATE_STEP: "0.5"                      # target temperature step size
-  TILE4_CLIMATE_CURRENT_TEMP_ATTRIBUTE: "current_temperature"  # HA attribute for current room temperature
-  TILE4_CLIMATE_TARGET_TEMP_ATTRIBUTE: "temperature"           # HA attribute for target temperature
-  TILE4_CLIMATE_HUMIDITY_ATTRIBUTE: "current_humidity"         # HA attribute for humidity; leave as-is if unavailable
+  TILE4_CLIMATE_CURRENT_TEMP_ATTRIBUTE: "current_temperature"  # legacy field, unused under Homebridge (state comes from the accessory)
+  TILE4_CLIMATE_TARGET_TEMP_ATTRIBUTE: "temperature"           # legacy field, unused under Homebridge (state comes from the accessory)
+  TILE4_CLIMATE_HUMIDITY_ATTRIBUTE: "current_humidity"         # legacy field, unused under Homebridge (state comes from the accessory)
 
 
   # ============================================================
@@ -288,7 +295,7 @@ substitutions:
   # ============================================================
 
   # --- basic settings ---
-  TILE5_ENTITY: "cover.living_room"                # main Home Assistant entity for this tile
+  TILE5_ENTITY: "cover.living_room"                # accessory uniqueId for this tile (overridden by /setup)
   TILE5_STATE_ENTITY: "cover.living_room"          # entity used for active/inactive state styling
   TILE5_TITLE: "Cover"                             # tile title shown in the UI
   TILE5_ICON: "\U000F111C"                         # MDI glyph — also add to MDI_GLYPH_* list above if not already there
@@ -326,9 +333,9 @@ substitutions:
   TILE5_CLIMATE_MIN_TEMP: "5.0"                  # minimum target temperature shown in the thermostat overlay
   TILE5_CLIMATE_MAX_TEMP: "30.0"                 # maximum target temperature shown in the thermostat overlay
   TILE5_CLIMATE_STEP: "0.5"                      # target temperature step size
-  TILE5_CLIMATE_CURRENT_TEMP_ATTRIBUTE: "current_temperature"  # HA attribute for current room temperature
-  TILE5_CLIMATE_TARGET_TEMP_ATTRIBUTE: "temperature"           # HA attribute for target temperature
-  TILE5_CLIMATE_HUMIDITY_ATTRIBUTE: "current_humidity"         # HA attribute for humidity; leave as-is if unavailable
+  TILE5_CLIMATE_CURRENT_TEMP_ATTRIBUTE: "current_temperature"  # legacy field, unused under Homebridge (state comes from the accessory)
+  TILE5_CLIMATE_TARGET_TEMP_ATTRIBUTE: "temperature"           # legacy field, unused under Homebridge (state comes from the accessory)
+  TILE5_CLIMATE_HUMIDITY_ATTRIBUTE: "current_humidity"         # legacy field, unused under Homebridge (state comes from the accessory)
 
 
   # ============================================================
@@ -336,7 +343,7 @@ substitutions:
   # ============================================================
 
   # --- basic settings ---
-  TILE6_ENTITY: "fan.air_purifier"                 # main Home Assistant entity for this tile
+  TILE6_ENTITY: "fan.air_purifier"                 # accessory uniqueId for this tile (overridden by /setup)
   TILE6_STATE_ENTITY: "fan.air_purifier"           # entity used for active/inactive state styling  
   TILE6_TITLE: "Purifier"                          # tile title shown in the UI
   TILE6_ICON: "\U000F0D43"                         # MDI glyph — also add to MDI_GLYPH_* list above if not already there
@@ -374,9 +381,9 @@ substitutions:
   TILE6_CLIMATE_MIN_TEMP: "5.0"                  # minimum target temperature shown in the thermostat overlay
   TILE6_CLIMATE_MAX_TEMP: "30.0"                 # maximum target temperature shown in the thermostat overlay
   TILE6_CLIMATE_STEP: "0.5"                      # target temperature step size
-  TILE6_CLIMATE_CURRENT_TEMP_ATTRIBUTE: "current_temperature"  # HA attribute for current room temperature
-  TILE6_CLIMATE_TARGET_TEMP_ATTRIBUTE: "temperature"           # HA attribute for target temperature
-  TILE6_CLIMATE_HUMIDITY_ATTRIBUTE: "current_humidity"         # HA attribute for humidity; leave as-is if unavailable
+  TILE6_CLIMATE_CURRENT_TEMP_ATTRIBUTE: "current_temperature"  # legacy field, unused under Homebridge (state comes from the accessory)
+  TILE6_CLIMATE_TARGET_TEMP_ATTRIBUTE: "temperature"           # legacy field, unused under Homebridge (state comes from the accessory)
+  TILE6_CLIMATE_HUMIDITY_ATTRIBUTE: "current_humidity"         # legacy field, unused under Homebridge (state comes from the accessory)
 
   # ============================================================
   # ORIENTATION / LAYOUT
@@ -541,6 +548,11 @@ hb_config:
 esphome:
   name: smartdisplay
   friendly_name: SmartDisplay
+  name_add_mac_suffix: true
+  # Adoptable-firmware metadata, surfaced by the browser flasher (ESP Web Tools).
+  project:
+    name: "wrkintegrated.homebridge-cyd-panel"
+    version: "1.0.0"
   on_boot:
     - priority: 600
       then:
@@ -552,6 +564,7 @@ esphome:
             brightness: !lambda "return atoi(\"${MAX_BRIGHTNESS}\") / 100.0f;"
         - script.execute: ui_refresh
         - script.execute: hb_login
+        - script.execute: selftest_hide
     # Runs after hb_config's setup() (setup_priority LATE = -100), so the stored
     # config is parsed before we apply the room name / tile titles / visibility.
     - priority: -200
@@ -566,23 +579,26 @@ esp32:
 
 logger:
 
-# Credentials are loaded from secrets.yaml — copy secrets.yaml.example to secrets.yaml and fill in your values.
-api:
-  encryption:
-    key: !secret smartdisplay_api_key
+# No secrets required. There is no Home Assistant, so the native encrypted API
+# is not used. Wi-Fi is provisioned in the browser during flashing (Improv
+# Serial) or via the captive-portal fallback AP below, then stored in flash.
 
 ota:
   - platform: esphome
-    password: !secret ota_password
 
 wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
+  # No baked-in network — credentials are entered while flashing (improv_serial)
+  # or through the captive portal on the fallback AP, and saved to flash.
   ap:
-    ssid: "Smartdisplay Fallback Hotspot"
-    password: !secret wifi_ap_password
+    ssid: "SmartDisplay Setup"
+    password: "configesp"
 
 captive_portal:
+
+# Lets the browser flasher (ESP Web Tools) set Wi-Fi over USB right after
+# flashing, then hands the user a link straight to the on-device /setup page.
+improv_serial:
+  next_url: "http://{{ip_address}}/setup"
 
 interval:
   - interval: 1s
@@ -612,7 +628,7 @@ interval:
 
 time:
   - platform: sntp
-    id: homeassistant_time
+    id: sntp_time
     servers:
       - 0.pool.ntp.org
       - 1.pool.ntp.org
@@ -975,13 +991,13 @@ binary_sensor:
 # Text sensors
 #
 # smartdisplay_action:
-# - Main touch event channel exported to Home Assistant
+# - Main touch event channel (exposed on the local web_server)
 # - On short tap, publishes one of:
 #     tile1_press / tile2_press / tile3_press / tile4_press / tile5_press / tile6_press
 # - The value is reset shortly after publishing
 #
 # tile*_preset:
-# - Mirrors the Home Assistant preset_mode attribute for each tile entity
+# - Holds the current fan preset/mode label for each tile
 # - Used by the UI to display fan presets when applicable
 # ----------------------------------------------------------
 text_sensor:
@@ -1210,17 +1226,18 @@ touchscreen:
     - lambda: |-
         id(last_touch_ms) = millis();
 
-# Display configuration (ILI9341)
+# Display configuration
 display:
-  # This CYD variant uses an ST7789V controller (not ILI9341). With the correct
-  # model, mipi_spi + LVGL rotation aligns normally.
+  # Most CYDs use an ST7789V controller (the default). Some clones are ILI9341 —
+  # the browser flasher offers both builds; DISPLAY_MODEL / INVERT_COLORS are
+  # overridden by CI to produce the ILI9341 variant.
   - platform: mipi_spi
     id: my_display
     spi_id: lcd
-    model: ST7789V
+    model: ${DISPLAY_MODEL}
     cs_pin: 15
     dc_pin: 2
-    invert_colors: false
+    invert_colors: ${INVERT_COLORS}
     update_interval: never
     auto_clear_enabled: false
     dimensions:
@@ -1235,6 +1252,66 @@ lvgl:
 
   # LVGL owns the rotation (display + touch) since ESPHome 2026.4.
   rotation: ${LVGL_ROTATION}
+
+  # First-boot display self-test. Covers the screen with red/green/blue bars and
+  # the build name so a user can instantly tell whether they flashed the right
+  # display controller: crisp bars in the right colors = correct build; a
+  # garbled image or wrong colors = flash the other build. The on_boot handler
+  # hides it a few seconds after boot.
+  top_layer:
+    widgets:
+      - obj:
+          id: selftest_overlay
+          x: 0
+          y: 0
+          width: 100%
+          height: 100%
+          bg_color: 0x101012
+          bg_opa: COVER
+          radius: 0
+          border_width: 0
+          pad_all: 8
+          scrollable: false
+          widgets:
+            - label:
+                align: TOP_MID
+                y: 2
+                text_font: label
+                text_color: 0xFFFFFF
+                text: "SmartDisplay  ${DISPLAY_MODEL}"
+            - obj:
+                align: TOP_MID
+                y: 24
+                width: 90%
+                height: 25%
+                bg_color: 0xFF0000
+                bg_opa: COVER
+                radius: 6
+                border_width: 0
+            - obj:
+                align: CENTER
+                y: 0
+                width: 90%
+                height: 25%
+                bg_color: 0x00FF00
+                bg_opa: COVER
+                radius: 6
+                border_width: 0
+            - obj:
+                align: BOTTOM_MID
+                y: -24
+                width: 90%
+                height: 25%
+                bg_color: 0x0000FF
+                bg_opa: COVER
+                radius: 6
+                border_width: 0
+            - label:
+                align: BOTTOM_MID
+                y: -4
+                text_font: sublabel
+                text_color: 0xFFFFFF
+                text: "Garbled or wrong colors? Flash the other build."
 
   style_definitions:
     - id: style_tile
@@ -2957,6 +3034,14 @@ lvgl:
               - script.execute: wake_display
 
 script:
+  # Fire-and-forget: keep the boot self-test overlay up briefly, then hide it so
+  # the normal tile UI shows. Runs independently of the boot ordering.
+  - id: selftest_hide
+    mode: restart
+    then:
+      - delay: 5s
+      - lvgl.widget.hide: selftest_overlay
+
   - id: wake_display
     mode: restart
     then:
@@ -2982,7 +3067,7 @@ script:
                 int max_value = atoi("${MAX_BRIGHTNESS}");
 
                 if (std::string("${NIGHT_MODE}") == "true") {
-                  auto now = id(homeassistant_time).now();
+                  auto now = id(sntp_time).now();
                   int hour = now.hour;
                   int start_hour = atoi("${NIGHT_START_HOUR}");
                   int end_hour = atoi("${NIGHT_END_HOUR}");
@@ -3055,11 +3140,11 @@ script:
           condition:
             lambda: 'return std::string("${DIRECT_ACTIONS}") == "true";'
           then:
-            - homeassistant.action:
-                action: climate.set_temperature
-                data:
-                  entity_id: !lambda "return id(active_entity);"
-                  temperature: !lambda "return value / 10.0f;"
+            - script.execute:
+                id: hb_put
+                uid: !lambda "return id(active_entity);"
+                ctype: "TargetTemperature"
+                value_json: !lambda "return to_string(value / 10.0f);"
 
   - id: climate_adjust_target
     parameters:
@@ -3134,11 +3219,16 @@ script:
           condition:
             lambda: 'return std::string("${DIRECT_ACTIONS}") == "true";'
           then:
-            - homeassistant.action:
-                action: climate.set_hvac_mode
-                data:
-                  entity_id: !lambda "return id(active_entity);"
-                  hvac_mode: !lambda "return id(active_climate_mode);"
+            - script.execute:
+                id: hb_put
+                uid: !lambda "return id(active_entity);"
+                ctype: "TargetHeatingCoolingState"
+                value_json: !lambda |-
+                  std::string m = id(active_climate_mode);
+                  if (m == "off") return std::string("0");
+                  if (m == "heat") return std::string("1");
+                  if (m == "cool") return std::string("2");
+                  return std::string("3");  // heat_cool / auto / dry / fan_only -> auto
 
   - id: open_color_detail
     mode: restart
@@ -3379,73 +3469,54 @@ script:
                       condition:
                         lambda: "return value <= 0;"
                       then:
-                        - homeassistant.action:
-                            action: fan.turn_off
-                            data:
-                              entity_id: !lambda "return id(active_entity);"
+                        - script.execute:
+                            id: hb_put
+                            uid: !lambda "return id(active_entity);"
+                            ctype: "On"
+                            value_json: "false"
                       else:
-                        - homeassistant.action:
-                            action: fan.turn_on
-                            data:
-                              entity_id: !lambda "return id(active_entity);"
+                        - script.execute:
+                            id: hb_put
+                            uid: !lambda "return id(active_entity);"
+                            ctype: "On"
+                            value_json: "true"
                         - delay: 150ms
-                        - homeassistant.action:
-                            action: fan.set_percentage
-                            data:
-                              entity_id: !lambda "return id(active_entity);"
-                              percentage: !lambda "return value;"
+                        - script.execute:
+                            id: hb_put
+                            uid: !lambda "return id(active_entity);"
+                            ctype: "RotationSpeed"
+                            value_json: !lambda "return to_string(value);"
                 else:
                   - if:
                       condition:
                         lambda: |-
                           return id(active_control_kind) == "cover_position";
                       then:
-                        - homeassistant.action:
-                            action: cover.set_cover_position
-                            data:
-                              entity_id: !lambda "return id(active_entity);"
-                              position: !lambda "return value;"
+                        - script.execute:
+                            id: hb_put
+                            uid: !lambda "return id(active_entity);"
+                            ctype: "TargetPosition"
+                            value_json: !lambda "return to_string(value);"
 
   # ----------------------------------------------------------
   # do_tile_action
   #
-  # Centralized handler for executing Home Assistant actions
-  # triggered by tile taps.
+  # Centralized handler for a tile tap. Sends a single Homebridge
+  # characteristic PUT (via hb_put) to the tile's accessory.
   #
   # Parameters
   # - tile_type: light | fan | switch | scene | script | cover
   # - tap_action: auto | toggle | activate | fan_toggle_preset
-  # - service: optional Home Assistant service override
-  # - entity_id: target entity
-  # - param_key / param_val: optional parameters for custom services
-  # - was_on: previous entity state (pass false for longpress actions)
+  # - service / param_key / param_val: unused under Homebridge; kept so the
+  #   existing tile call-sites don't need to change their argument lists
+  # - entity_id: target accessory uniqueId
+  # - was_on: previous state (pass false for longpress actions)
   #
   # Behavior
-  #
-  # toggle
-  #   -> toggles the entity
-  #   light.toggle / fan.toggle / switch.toggle / cover.open_cover|close_cover (based on was_on)
-  #
-  # activate
-  #   -> activates entity
-  #   scene.turn_on / script.turn_on / light.turn_on / fan.turn_on / cover.open_cover
-  #
-  # auto
-  #   -> resolves automatically based on tile_type:
-  #        light/switch/fan/cover -> toggle
-  #        scene/script           -> activate
-  #
-  # fan_toggle_preset
-  #   -> if fan was ON: fan.turn_off
-  #   -> if fan was OFF:
-  #        fan.turn_on
-  #        wait 150ms
-  #        fan.set_preset_mode(param_val)
-  #
-  # Custom service
-  #   If "service" is set, it will be called directly.
-  #   param_key / param_val may be used for parameters
-  #   like preset_mode, brightness_pct, percentage, etc.
+  #   cover        -> PUT TargetPosition (100 = open, 0 = closed)
+  #   other types  -> PUT On (true/false)
+  #   activate (and auto for scene/script) -> On = true
+  #   toggle / fan_toggle_preset           -> inverts was_on
   # ----------------------------------------------------------
   - id: do_tile_action
     mode: queued
@@ -3937,7 +4008,7 @@ script:
           }
 
           {
-            auto now = id(homeassistant_time).now();
+            auto now = id(sntp_time).now();
             char buf[10];
 
             if (std::string("${TIME_24H}") == "true") {

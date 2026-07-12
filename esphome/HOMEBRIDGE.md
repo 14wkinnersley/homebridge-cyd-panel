@@ -1,9 +1,10 @@
 # Homebridge integration (no Home Assistant, no MQTT)
 
-This project was originally built for **Home Assistant**, which ESPHome talks to
-natively over its encrypted API. Homebridge has no such native ESPHome link, so
-the panel talks to Homebridge a different way: the **Homebridge UI REST API**
+This panel controls your home through the **Homebridge UI REST API**
 (`homebridge-config-ui-x` — the same service you reach at your Homebridge URL).
+There's no Home Assistant and no MQTT broker involved. (ESPHome normally talks to
+Home Assistant over its native encrypted API; Homebridge has no such link, so this
+build uses the REST API instead.)
 
 With Homebridge's **Accessory Control** ("insecure") mode enabled, that API can
 read and control **any** accessory Homebridge bridges — Hue, LIFX, Nest, etc. —
@@ -43,25 +44,35 @@ nothing to control.
 
 ### 2. Flash the panel (once)
 
-You don't have Home Assistant, so install standalone ESPHome:
+The easy way — **[flash.wrkintegrated.com](https://flash.wrkintegrated.com)** — needs
+no ESPHome, no compiling, and no secrets. Plug the display into a desktop running
+Chrome / Edge / Opera, click **Install**, and enter your Wi-Fi when prompted. The
+firmware is secret-free: Wi-Fi is provisioned in the browser (Improv), nothing
+sensitive is baked in, and your Homebridge details are entered later on the panel's
+own `/setup` page.
+
+> **Display controller:** most CYDs are **ST7789V** (the default build). Some are
+> **ILI9341** — the flasher offers both, and the panel's first-boot **self-test
+> screen** (red/green/blue bars + build name) tells you if you picked the wrong one.
+> If it looks garbled or the colors are wrong, just re-flash the other build.
+
+<details><summary><b>Advanced: build and flash it yourself</b></summary>
+
+You don't need this, but if you want to change compile-time defaults (pins,
+orientation, tile defaults, display model):
 
 ```bash
 pip install esphome
-# or: docker run --rm -v "${PWD}:/config" -it ghcr.io/esphome/esphome
+esphome run esphome/homebridge/cyd-2432s028/home-like.yaml          # pick your serial port
+# ILI9341 variant:
+esphome -s DISPLAY_MODEL ILI9341 -s INVERT_COLORS true run esphome/homebridge/cyd-2432s028/home-like.yaml
 ```
 
-From the `esphome/` folder, copy the example secrets and fill in **Wi-Fi + an OTA
-password + an API key** (the Homebridge URL/credentials are *not* needed here —
-you'll enter those on the web page):
+No `secrets.yaml` is required — Wi-Fi is set at flash time (Improv) or via the
+captive-portal fallback AP `SmartDisplay Setup`. (The only file that still uses
+secrets is the optional `link-test.yaml` validator described below.)
 
-```bash
-cp secrets.yaml.example secrets.yaml   # edit wifi_ssid / wifi_password / ota_password / smartdisplay_api_key
-esphome run homebridge/cyd-2432s028/home-like.yaml   # pick your serial port
-```
-
-> **Display controller:** the config defaults to **ST7789V** (what this build was
-> validated on). Many CYDs are **ILI9341** — if the screen is blank, garbled, or
-> mis-rotated, change the display `model:` in the YAML to match your board.
+</details>
 
 ### 3. Configure at `http://<panel-ip>/setup`
 
@@ -207,13 +218,15 @@ Confirmed on a live CYD + Homebridge (2026-07-11); already baked into
 
 ## Roadmap
 
-- [x] `secrets.yaml.example` — Wi-Fi / OTA / API key (Homebridge creds go on `/setup`)
 - [x] **link-test.yaml** — validates login + control + state read (confirmed on hardware)
 - [x] Full **home-like** tile UI on the CYD, driven by the Homebridge API (landscape,
       live state, tap-to-toggle, brightness/color)
 - [x] **On-device web config** — set URL/credentials/room + a device picker at
       `/setup`, stored in flash, applied live. One firmware for any room/devices.
-- [ ] External ILI9341 + ESP32 variant
+- [x] **Browser flasher** (ESP Web Tools) with in-browser Wi-Fi (Improv) and a
+      secret-free factory image — no ESPHome install, no compiling
+- [x] **ST7789V + ILI9341 builds** with a first-boot display self-test
+- [ ] External ILI9341 + ESP32 (Homebridge) variant
 - [ ] Streaming device-list fetch (list *all* accessories on very large installs)
 
 ---

@@ -1,0 +1,87 @@
+name: Build firmware & deploy flasher
+
+# Builds the SmartDisplay firmware in two variants (ST7789V default + ILI9341
+# fallback), each with an ESP-Web-Tools manifest, and publishes the static
+# flasher site (site/) + both firmware folders to Cloudflare Pages.
+#
+# The firmware is secret-free by design (Wi-Fi is set in-browser via Improv),
+# so no ESPHome secrets are needed here. The only repo secrets required are the
+# two Cloudflare ones below (used on the deploy step only).
+
+on:
+  push:
+    branches: [main]
+    # Only rebuild when firmware or the site actually change.
+    paths:
+      - "esphome/homebridge/**"
+      - "site/**"
+      - ".github/workflows/flasher.yml"
+  pull_request:
+    paths:
+      - "esphome/homebridge/**"
+      - "site/**"
+      - ".github/workflows/flasher.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flasher-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FIRMWARE_YAML: esphome/homebridge/cyd-2432s028/home-like.yaml
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # --- ST7789V (default build) ---------------------------------------
+      - name: Build ST7789V firmware
+        id: st7789
+        uses: esphome/build-action@v7
+        with:
+          yaml-file: ${{ env.FIRMWARE_YAML }}
+          complete-manifest: true      # emit an ESP-Web-Tools manifest.json
+
+      - name: Stage ST7789V build
+        run: |
+          mkdir -p public/firmware/st7789
+          cp -r "${{ steps.st7789.outputs.name }}"/* public/firmware/st7789/
+
+      # --- ILI9341 (fallback build) --------------------------------------
+      # Same source, display model overridden via substitutions. Staged before
+      # this build so the shared output folder name doesn't clobber ST7789V.
+      - name: Build ILI9341 firmware
+        id: ili9341
+        uses: esphome/build-action@v7
+        with:
+          yaml-file: ${{ env.FIRMWARE_YAML }}
+          complete-manifest: true
+          substitutions: |
+            DISPLAY_MODEL=ILI9341
+            INVERT_COLORS=true
+
+      - name: Stage ILI9341 build
+        run: |
+          mkdir -p public/firmware/ili9341
+          cp -r "${{ steps.ili9341.outputs.name }}"/* public/firmware/ili9341/
+
+      # --- Assemble the static site --------------------------------------
+      - name: Stage flasher site
+        run: cp -r site/* public/
+
+      # --- Deploy to Cloudflare Pages (main only) ------------------------
+      # Requires repo secrets CLOUDFLARE_API_TOKEN (Pages:Edit) and
+      # CLOUDFLARE_ACCOUNT_ID. PRs build but do not deploy.
+      - name: Deploy to Cloudflare Pages
+        if: github.event_name != 'pull_request'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy public --project-name=homebridge-cyd-panel --branch=main

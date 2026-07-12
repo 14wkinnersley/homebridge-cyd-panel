@@ -5,6 +5,36 @@ Pure documentation and README updates are not included.
 
 ---
 
+## 2026-07-12
+
+### Changed
+- **Project pivot to Homebridge-only.** Removed the Home Assistant UI configs
+  (`esphome/home-like/` and `esphome/buttons/`). The Homebridge build under
+  `esphome/homebridge/cyd-2432s028/` is now the sole firmware. Home Assistant
+  users should use the upstream project, `akuehlewind/ESPHome-touch-display-mount`.
+- Replaced the last `homeassistant.action` calls (climate / fan / cover) in the
+  panel firmware with Homebridge REST commands via `hb_put`, and dropped the
+  native `api:` component (no Home Assistant to talk to).
+
+### Added
+- **Browser flasher.** A static site (`site/`) using ESP Web Tools flashes the
+  firmware over USB and provisions Wi-Fi in the browser via `improv_serial:` —
+  no ESPHome install, no compiling, no `secrets.yaml`.
+- **Secret-free factory firmware.** Wi-Fi is set at flash time (Improv) or via
+  the captive-portal fallback AP; nothing sensitive is baked into the public
+  binary. Added `esphome: project:` metadata for adoptable firmware.
+- **Two display builds.** `DISPLAY_MODEL` / `INVERT_COLORS` substitutions build
+  an ST7789V (default) and an ILI9341 variant, both surfaced on the flasher.
+- **First-boot self-test screen** (R/G/B bars + build name) so users can tell if
+  they flashed the right display controller.
+- **CI** (`.github/workflows/flasher.yml`) builds both variants and deploys the
+  flasher + firmware to Cloudflare Pages.
+
+### Changed (UI)
+- `/setup` page restyled to a clean light/Apple look; removed the emoji icons.
+
+---
+
 ## 2026-06-21
 
 ### Fixed
