@@ -1,0 +1,8 @@
+# Cloudflare Pages headers.
+#
+# Never let a browser serve a stale firmware image or manifest: a re-flash must
+# always pull the newest build. Without this, Pages' default multi-hour cache on
+# the .bin means clicking "Install" again can re-flash an old binary from cache.
+# (Firmware files are only fetched when actually flashing, so no-store is cheap.)
+/firmware/*
+  Cache-Control: no-store
