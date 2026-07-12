@@ -122,15 +122,20 @@
     <h2>Wrong colors or a garbled screen?</h2>
     <p class="sub">
       On first boot the panel shows a <b>red / green / blue test screen</b> with the build name.
-      If those bars look torn, shifted, or the colors are wrong, your board uses the other
-      controller, so just re-flash the <b>ILI9341</b> build below. Re-flashing is safe and takes
-      about a minute.
+      If those bars look torn, shifted, or the colors are wrong, your board uses a different
+      controller. Try the <b>ILI9341</b> build first; if that's still wrong, try the
+      <b>ILI9342</b> build. Re-flashing is safe and takes about a minute.
     </p>
     <div class="install">
       <esp-web-install-button manifest="/firmware/ili9341/manifest.json">
         <button slot="activate" class="btn secondary">Install ILI9341</button>
         <span slot="unsupported"></span>
       </esp-web-install-button>
+      <esp-web-install-button manifest="/firmware/ili9342/manifest.json">
+        <button slot="activate" class="btn secondary">Install ILI9342 (experimental)</button>
+        <span slot="unsupported"></span>
+      </esp-web-install-button>
+      <span class="muted">ILI9342 is a landscape-native panel; its touch calibration is unverified and may need tuning.</span>
     </div>
   </div>
 

@@ -56,11 +56,13 @@
 
 substitutions:
 
-  # Display controller. Default ST7789V (most CYDs). The browser flasher's
-  # ILI9341 fallback build is produced by overriding these in CI:
-  #   DISPLAY_MODEL=ILI9341  INVERT_COLORS=true
+  # Display controller + native panel size. Defaults suit ST7789V and ILI9341
+  # (240x320 portrait-native). The browser flasher builds the fallbacks by
+  # overriding these via wrapper YAMLs (home-like-ili9341.yaml / -ili9342.yaml).
   DISPLAY_MODEL: "ST7789V"
   INVERT_COLORS: "false"
+  DISPLAY_NATIVE_W: "240"
+  DISPLAY_NATIVE_H: "320"
 
   DIRECT_ACTIONS: "true"                           # true = send control commands to Homebridge directly, false = only emit action events
   HB_BASE_URL: "http://homebridge.local:8581"
@@ -1228,9 +1230,9 @@ touchscreen:
 
 # Display configuration
 display:
-  # Most CYDs use an ST7789V controller (the default). Some clones are ILI9341 —
-  # the browser flasher offers both builds; DISPLAY_MODEL / INVERT_COLORS are
-  # overridden by CI to produce the ILI9341 variant.
+  # Most CYDs use ST7789V (the default). Some clones are ILI9341 (240x320 native)
+  # or ILI9342 (320x240 native). The browser flasher builds those variants via
+  # wrapper YAMLs that override DISPLAY_MODEL / INVERT_COLORS / DISPLAY_NATIVE_*.
   - platform: mipi_spi
     id: my_display
     spi_id: lcd
@@ -1241,8 +1243,8 @@ display:
     update_interval: never
     auto_clear_enabled: false
     dimensions:
-      width: 240
-      height: 320
+      width: ${DISPLAY_NATIVE_W}
+      height: ${DISPLAY_NATIVE_H}
 
 lvgl:
   displays:

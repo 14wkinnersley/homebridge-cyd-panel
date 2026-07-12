@@ -1,0 +1,30 @@
+# ILI9342 build variant (EXPERIMENTAL).
+#
+# A third display option for the browser flasher, for CYD clones that use the
+# ILI9342 controller. Unlike ST7789V / ILI9341 (240x320 portrait-native), ILI9342
+# is 320x240 LANDSCAPE-native, so this overrides the panel dimensions and drops
+# the LVGL rotation (the panel is already landscape) to keep the same 320x240 UI.
+#
+# NOTE: the touch transform below is a best guess. This build has not been
+# verified on real ILI9342 hardware, so touch may be rotated/mirrored and need
+# tuning (TOUCH_SWAP_XY / TOUCH_MIRROR_X / TOUCH_MIRROR_Y). The on-boot self-test
+# will confirm the display itself is correct.
+#
+# build-action has no CLI-substitution input, so the overrides live here: the
+# main firmware is included as a package and these top-level substitutions win.
+substitutions:
+  DISPLAY_MODEL: "ILI9342"
+  INVERT_COLORS: "false"
+  # Landscape-native panel: 320x240, no LVGL rotation.
+  DISPLAY_NATIVE_W: "320"
+  DISPLAY_NATIVE_H: "240"
+  LVGL_ROTATION: "0"
+  DISPLAY_W: "320"
+  DISPLAY_H: "240"
+  # Best-guess touch transform (unverified on ILI9342 hardware).
+  TOUCH_SWAP_XY: "false"
+  TOUCH_MIRROR_X: "true"
+  TOUCH_MIRROR_Y: "false"
+
+packages:
+  firmware: !include home-like.yaml

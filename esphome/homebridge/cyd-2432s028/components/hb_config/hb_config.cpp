@@ -97,7 +97,7 @@ function connect(saving){setMsg('Connecting to Homebridge&hellip;');var tries=0;
    if(d&&d.loading){if(tries++>25){fail();return;}setTimeout(poll,1000);return;}
    DEVICES=d||[];fillPickers();showTiles();
    var n=DEVICES.length,dev=n+' device'+(n===1?'':'s');
-   setMsg('<span class="ok">'+(saving?'Saved &#10003; &mdash; connected, '+dev:'Connected &#10003; '+dev+' found')+'</span>');
+   setMsg('<span class="ok">'+(saving?'Saved &#10003; &middot; connected, '+dev:'Connected &#10003; '+dev+' found')+'</span>');
   }).catch(function(){fail();});})();
  function fail(){hideTiles();setMsg('<span class="err">Couldn&rsquo;t connect. Check the URL, username and password, then tap Save again.</span>');}}
 function load(){fetch('/hbcfg').then(function(r){return r.json()}).then(function(c){
@@ -267,7 +267,7 @@ void HbConfig::tick_fetch_watchdog() {
 
 void HbConfig::set_devices_json(const std::string &raw) {
   // The Homebridge layout is [{"name":room,"services":[{"uniqueId","name",...}]}].
-  // Scan it into a compact [{"u":uid,"n":name}] list without a full DOM parse — the
+  // Scan it into a compact [{"u":uid,"n":name}] list without a full DOM parse; the
   // raw payload is tens of KB and an ArduinoJson document would be memory-heavy.
   // ("nameBasedUniqueId" never contains the exact "uniqueId":" key, and the service
   // name is always the first "name":" after each uniqueId, so a linear scan is safe.)
