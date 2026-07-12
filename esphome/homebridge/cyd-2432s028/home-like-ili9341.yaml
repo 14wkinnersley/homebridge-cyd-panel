@@ -1,0 +1,14 @@
+# ILI9341 build variant.
+#
+# Identical to home-like.yaml, but overrides the display controller. The browser
+# flasher offers this as the fallback for CYDs that aren't ST7789V.
+#
+# esphome/build-action has no CLI-substitution input, so the override lives here:
+# home-like.yaml is pulled in as a package, and these top-level substitutions win
+# over the defaults it declares (main-config substitutions override package ones).
+substitutions:
+  DISPLAY_MODEL: "ILI9341"
+  INVERT_COLORS: "true"
+
+packages:
+  firmware: !include home-like.yaml

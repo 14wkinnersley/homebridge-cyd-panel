@@ -52,24 +52,24 @@ jobs:
         run: |
           mkdir -p public/firmware/st7789
           cp -r "${{ steps.st7789.outputs.name }}"/* public/firmware/st7789/
+          rm -f public/firmware/st7789/*.elf   # ~25 MiB debug ELF, over Cloudflare's 25 MiB/file limit
 
       # --- ILI9341 (fallback build) --------------------------------------
-      # Same source, display model overridden via substitutions. Staged before
-      # this build so the shared output folder name doesn't clobber ST7789V.
+      # Same firmware, display model overridden via the home-like-ili9341.yaml
+      # wrapper (build-action has no substitutions input). Staged before this
+      # build so the shared output folder name doesn't clobber ST7789V.
       - name: Build ILI9341 firmware
         id: ili9341
         uses: esphome/build-action@v7
         with:
-          yaml-file: ${{ env.FIRMWARE_YAML }}
+          yaml-file: esphome/homebridge/cyd-2432s028/home-like-ili9341.yaml
           complete-manifest: true
-          substitutions: |
-            DISPLAY_MODEL=ILI9341
-            INVERT_COLORS=true
 
       - name: Stage ILI9341 build
         run: |
           mkdir -p public/firmware/ili9341
           cp -r "${{ steps.ili9341.outputs.name }}"/* public/firmware/ili9341/
+          rm -f public/firmware/ili9341/*.elf
 
       # --- Assemble the static site --------------------------------------
       - name: Stage flasher site
@@ -84,4 +84,4 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy public --project-name=homebridge-cyd-panel --branch=main
+          command: pages deploy public --project-name=homebridge-cyd-panel --branch=main --commit-dirty=true
