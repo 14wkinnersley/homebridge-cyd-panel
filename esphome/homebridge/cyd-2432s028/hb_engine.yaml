@@ -1,0 +1,285 @@
+############################################################
+# Homebridge engine (package)  —  included by panel.yaml
+#
+# Replaces the Home Assistant data + command layer with the Homebridge UI
+# REST API (homebridge-config-ui-x), validated on hardware in link-test.yaml.
+# All the non-obvious http_request settings live here (see esphome/HOMEBRIDGE.md).
+#
+# It feeds the SAME sensor/text_sensor ids the LVGL `ui_refresh` script already
+# reads (ha_state_tile*, tile*_brightness, tile*_supported_color_modes, ...), so
+# the UI is untouched. Per-tile uniqueId = ${TILE*_ENTITY}; polling + tiles are
+# gated by ${TILE*_ENABLED}.
+#
+# HomeKit -> UI value mapping (ui_refresh expectations):
+#   On (bool)            -> ha_state_tile* = "on"/"off"
+#   Brightness (0-100)   -> tile*_brightness = Brightness * 2.55  (ui_refresh treats it as HA 0-255)
+#   Hue / ColorTemperature present -> tile*_supported_color_modes = "['hs'[,'color_temp']]"
+############################################################
+
+http_request:
+  useragent: esphome/hb-panel
+  timeout: 5s
+  watchdog_timeout: 15s
+  verify_ssl: false
+  buffer_size_rx: 4096      # Homebridge response headers ~900 B
+  buffer_size_tx: 4096      # outgoing "Authorization: Bearer <token>" ~360 B
+
+json:
+
+globals:
+  - id: hb_token
+    type: std::string
+    restore_value: no
+  - id: hb_auth_header
+    type: std::string
+    restore_value: no
+  - id: hb_have_token
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+script:
+  # ---- Login: POST /api/auth/login -> bearer token -------------------------
+  - id: hb_login
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: 'return std::string("${HB_AUTH}") == "none";'
+          then:
+            - http_request.post:
+                url: ${HB_BASE_URL}/api/auth/noauth
+                capture_response: true
+                on_response:
+                  then:
+                    - script.execute:
+                        id: hb_store_token
+                        status: !lambda "return response->status_code;"
+                        resp: !lambda "return body;"
+          else:
+            - http_request.post:
+                url: ${HB_BASE_URL}/api/auth/login
+                capture_response: true
+                request_headers:
+                  Content-Type: application/json
+                json:
+                  username: !secret hb_username
+                  password: !secret hb_password
+                on_response:
+                  then:
+                    - script.execute:
+                        id: hb_store_token
+                        status: !lambda "return response->status_code;"
+                        resp: !lambda "return body;"
+
+  - id: hb_store_token
+    parameters:
+      status: int
+      resp: string
+    then:
+      - lambda: |-
+          if (status >= 200 && status < 300) {
+            json::parse_json(resp, [](JsonObject root) -> bool {
+              if (root["access_token"].is<const char*>()) {
+                id(hb_token) = root["access_token"].as<std::string>();
+                id(hb_auth_header) = "Bearer " + id(hb_token);
+                id(hb_have_token) = true;
+                return true;
+              }
+              return false;
+            });
+          }
+          if (id(hb_have_token)) ESP_LOGI("hb", "login OK");
+          else ESP_LOGE("hb", "login FAILED (http %d)", status);
+      - if:
+          condition:
+            lambda: 'return id(hb_have_token);'
+          then:
+            - script.execute: hb_poll_all
+
+  # ---- Poll all enabled tiles: GET /api/accessories/{id} -> template ids ----
+  - id: hb_poll_all
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: 'return !id(hb_have_token);'
+          then:
+            - script.execute: hb_login
+          else:
+            - if:
+                condition:
+                  lambda: 'return std::string("${TILE1_ENABLED}") == "true";'
+                then:
+                  - http_request.get:
+                      url: ${HB_BASE_URL}/api/accessories/${TILE1_ENTITY}
+                      capture_response: true
+                      max_response_buffer_size: 8192
+                      request_headers:
+                        Authorization: !lambda "return id(hb_auth_header).c_str();"
+                        Accept-Encoding: identity
+                      on_response:
+                        then:
+                          - lambda: |-
+                              int sc = response->status_code;
+                              if (sc < 200 || sc >= 300) { if (sc == 401) id(hb_have_token) = false; return; }
+                              json::parse_json(body, [](JsonObject root) -> bool {
+                                JsonObject v = root["values"];
+                                if (v.isNull()) return false;
+                                if (!v["On"].isNull())
+                                  id(ha_state_tile1).publish_state(v["On"].as<bool>() ? "on" : "off");
+                                if (v["Brightness"].is<int>() || v["Brightness"].is<float>())
+                                  id(tile1_brightness).publish_state(v["Brightness"].as<float>() * 2.55f);
+                                std::string modes = "[";
+                                if (!v["Hue"].isNull()) modes += "'hs'";
+                                if (!v["ColorTemperature"].isNull()) { if (modes.size() > 1) modes += ","; modes += "'color_temp'"; }
+                                modes += "]";
+                                id(tile1_supported_color_modes).publish_state(modes);
+                                return true;
+                              });
+                          - script.execute: ui_refresh
+            - if:
+                condition:
+                  lambda: 'return std::string("${TILE2_ENABLED}") == "true";'
+                then:
+                  - http_request.get:
+                      url: ${HB_BASE_URL}/api/accessories/${TILE2_ENTITY}
+                      capture_response: true
+                      max_response_buffer_size: 8192
+                      request_headers:
+                        Authorization: !lambda "return id(hb_auth_header).c_str();"
+                        Accept-Encoding: identity
+                      on_response:
+                        then:
+                          - lambda: |-
+                              int sc = response->status_code;
+                              if (sc < 200 || sc >= 300) { if (sc == 401) id(hb_have_token) = false; return; }
+                              json::parse_json(body, [](JsonObject root) -> bool {
+                                JsonObject v = root["values"];
+                                if (v.isNull()) return false;
+                                if (!v["On"].isNull())
+                                  id(ha_state_tile2).publish_state(v["On"].as<bool>() ? "on" : "off");
+                                if (v["Brightness"].is<int>() || v["Brightness"].is<float>())
+                                  id(tile2_brightness).publish_state(v["Brightness"].as<float>() * 2.55f);
+                                std::string modes = "[";
+                                if (!v["Hue"].isNull()) modes += "'hs'";
+                                if (!v["ColorTemperature"].isNull()) { if (modes.size() > 1) modes += ","; modes += "'color_temp'"; }
+                                modes += "]";
+                                id(tile2_supported_color_modes).publish_state(modes);
+                                return true;
+                              });
+                          - script.execute: ui_refresh
+            - if:
+                condition:
+                  lambda: 'return std::string("${TILE3_ENABLED}") == "true";'
+                then:
+                  - http_request.get:
+                      url: ${HB_BASE_URL}/api/accessories/${TILE3_ENTITY}
+                      capture_response: true
+                      max_response_buffer_size: 8192
+                      request_headers:
+                        Authorization: !lambda "return id(hb_auth_header).c_str();"
+                        Accept-Encoding: identity
+                      on_response:
+                        then:
+                          - lambda: |-
+                              int sc = response->status_code;
+                              if (sc < 200 || sc >= 300) { if (sc == 401) id(hb_have_token) = false; return; }
+                              json::parse_json(body, [](JsonObject root) -> bool {
+                                JsonObject v = root["values"];
+                                if (v.isNull()) return false;
+                                if (!v["On"].isNull())
+                                  id(ha_state_tile3).publish_state(v["On"].as<bool>() ? "on" : "off");
+                                if (v["Brightness"].is<int>() || v["Brightness"].is<float>())
+                                  id(tile3_brightness).publish_state(v["Brightness"].as<float>() * 2.55f);
+                                std::string modes = "[";
+                                if (!v["Hue"].isNull()) modes += "'hs'";
+                                if (!v["ColorTemperature"].isNull()) { if (modes.size() > 1) modes += ","; modes += "'color_temp'"; }
+                                modes += "]";
+                                id(tile3_supported_color_modes).publish_state(modes);
+                                return true;
+                              });
+                          - script.execute: ui_refresh
+            - if:
+                condition:
+                  lambda: 'return std::string("${TILE4_ENABLED}") == "true";'
+                then:
+                  - http_request.get:
+                      url: ${HB_BASE_URL}/api/accessories/${TILE4_ENTITY}
+                      capture_response: true
+                      max_response_buffer_size: 8192
+                      request_headers:
+                        Authorization: !lambda "return id(hb_auth_header).c_str();"
+                        Accept-Encoding: identity
+                      on_response:
+                        then:
+                          - lambda: |-
+                              int sc = response->status_code;
+                              if (sc < 200 || sc >= 300) { if (sc == 401) id(hb_have_token) = false; return; }
+                              json::parse_json(body, [](JsonObject root) -> bool {
+                                JsonObject v = root["values"];
+                                if (v.isNull()) return false;
+                                if (!v["On"].isNull())
+                                  id(ha_state_tile4).publish_state(v["On"].as<bool>() ? "on" : "off");
+                                if (v["Brightness"].is<int>() || v["Brightness"].is<float>())
+                                  id(tile4_brightness).publish_state(v["Brightness"].as<float>() * 2.55f);
+                                std::string modes = "[";
+                                if (!v["Hue"].isNull()) modes += "'hs'";
+                                if (!v["ColorTemperature"].isNull()) { if (modes.size() > 1) modes += ","; modes += "'color_temp'"; }
+                                modes += "]";
+                                id(tile4_supported_color_modes).publish_state(modes);
+                                return true;
+                              });
+                          - script.execute: ui_refresh
+
+  # ---- Generic command: PUT /api/accessories/{id} {characteristicType,value}
+  - id: hb_put
+    mode: queued
+    parameters:
+      uid: string
+      ctype: string
+      value_json: string
+    then:
+      - http_request.send:
+          method: PUT
+          url: !lambda 'return std::string("${HB_BASE_URL}/api/accessories/") + uid;'
+          request_headers:
+            Content-Type: application/json
+            Authorization: !lambda "return id(hb_auth_header).c_str();"
+          body: !lambda 'return std::string("{\"characteristicType\":\"") + ctype + "\",\"value\":" + value_json + "}";'
+      - delay: 250ms
+      - script.execute: hb_poll_all
+
+  # ---- Light color: two PUTs (Hue then Saturation) -------------------------
+  - id: hb_put_hue_sat
+    mode: queued
+    parameters:
+      uid: string
+      hue: int
+      sat: int
+    then:
+      - http_request.send:
+          method: PUT
+          url: !lambda 'return std::string("${HB_BASE_URL}/api/accessories/") + uid;'
+          request_headers:
+            Content-Type: application/json
+            Authorization: !lambda "return id(hb_auth_header).c_str();"
+          body: !lambda 'return std::string("{\"characteristicType\":\"Hue\",\"value\":") + to_string(hue) + "}";'
+      - delay: 120ms
+      - http_request.send:
+          method: PUT
+          url: !lambda 'return std::string("${HB_BASE_URL}/api/accessories/") + uid;'
+          request_headers:
+            Content-Type: application/json
+            Authorization: !lambda "return id(hb_auth_header).c_str();"
+          body: !lambda 'return std::string("{\"characteristicType\":\"Saturation\",\"value\":") + to_string(sat) + "}";'
+      - delay: 250ms
+      - script.execute: hb_poll_all
+
+interval:
+  - interval: 4s
+    then:
+      - script.execute: hb_poll_all
+  - interval: 6h
+    then:
+      - script.execute: hb_login

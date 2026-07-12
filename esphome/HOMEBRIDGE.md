@@ -158,6 +158,33 @@ Common failures:
 
 ---
 
+## Required ESPHome `http_request` settings (validated on hardware)
+
+Talking to the Homebridge UI API from an ESP32 needs several non-obvious settings.
+These were confirmed on a live CYD + Homebridge (2026-07-11) and are mandatory for
+the full port too — they're already baked into
+[homebridge/link-test.yaml](homebridge/link-test.yaml):
+
+- **Accept any 2xx, not just 200.** `POST /api/auth/login` returns **201 Created**;
+  gate success on `status >= 200 && status < 300` or every login looks like a failure.
+- **Send `Content-Type: application/json` on the login POST.** ESPHome's `json:`
+  action does *not* set it, and Homebridge rejects the body with **415** without it.
+- **Enlarge both HTTP buffers on the `http_request:` component:**
+  - `buffer_size_tx: 4096` — every authenticated request carries an
+    `Authorization: Bearer <token>` header (~360 B; the token is ~340 chars) that
+    overflows the default 512 B transmit buffer ("Buffer length is small to fit all
+    the headers").
+  - `buffer_size_rx: 4096` — Homebridge's response headers total ~900 B.
+- **Raise `max_response_buffer_size` on each parsed GET** (e.g. `8192`). It is an
+  *action* option (next to `capture_response`) and defaults to **1 kB**, which
+  truncates the accessory JSON (~1.2 kB, more for color lights) → `IncompleteInput`.
+- **Header-value lambdas must return `const char*`,** not `std::string`. Keep the
+  bearer string in a persistent global and return `id(hb_auth_header).c_str()`.
+- `Accept-Encoding: identity` on GETs is a cheap guard against compressed replies
+  the device can't inflate.
+
+---
+
 ## Home Assistant → HomeKit characteristic reference
 
 When we port the tiles, HA `entity_id` + service calls become HomeKit
@@ -185,9 +212,14 @@ UI math keeps working).
 - [x] `secrets.yaml.example` — Homebridge credentials
 - [x] `HB_BASE_URL` substitution pattern (keeps your URL out of the repo)
 - [x] **link-test.yaml** — validates login + control + state read
-- [ ] Full **home-like** tile UI on the CYD, driven by the Homebridge API
-      (login/token layer, per-tile state polling → existing `ui_refresh`,
-      tap/long-press → `PUT` characteristics)
+      (**confirmed on hardware 2026-07-11** — full read + write round-trip working)
+- [x] Full **home-like** tile UI on the CYD, driven by the Homebridge API —
+      [homebridge/cyd-2432s028/home-like.yaml](homebridge/cyd-2432s028/home-like.yaml)
+      + [hb_engine.yaml](homebridge/cyd-2432s028/hb_engine.yaml). **Working on hardware
+      2026-07-11**: landscape, live state, tap-to-toggle, Hue brightness/color, no dimming.
+      ⚠️ That board is **ST7789V** — set the display `model:` to match your panel
+      (most CYDs are ILI9341).
+- [ ] On-device web config page (URL/creds/room + device picker) — in progress
 - [ ] External ILI9341 + ESP32 variant
 
 Once link-test.yaml is confirmed on your setup, the full UI port is the next
