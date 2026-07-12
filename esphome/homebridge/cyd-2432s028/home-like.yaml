@@ -525,6 +525,19 @@ substitutions:
 packages:
   hb_engine: !include hb_engine.yaml
 
+external_components:
+  - source:
+      type: local
+      path: components
+
+# On-device setup page at http://<device-ip>/setup  (Phase 2)
+web_server:
+  port: 80
+  version: 2
+
+hb_config:
+  id: hb_cfg
+
 esphome:
   name: smartdisplay
   friendly_name: SmartDisplay
@@ -1179,10 +1192,8 @@ touchscreen:
 
 # Display configuration (ILI9341)
 display:
-  # ⚠️ DISPLAY CONTROLLER: this file is set to ST7789V. MOST Cheap Yellow Displays
-  # are ILI9341. If your screen is stuck in portrait, garbled, or shows wrong
-  # colors, change `model:` below to match your panel (ILI9341 / ST7789V / ILI9342)
-  # — a wrong model still renders roughly but rotation/orientation will not work.
+  # This CYD variant uses an ST7789V controller (not ILI9341). With the correct
+  # model, mipi_spi + LVGL rotation aligns normally.
   - platform: mipi_spi
     id: my_display
     spi_id: lcd

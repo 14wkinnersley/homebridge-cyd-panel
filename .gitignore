@@ -41,3 +41,8 @@ secrets.yml
 ############################################
 *.f3d~
 *.bak
+
+############################################
+# Homebridge personal device config (real IPs / accessory IDs)
+############################################
+esphome/homebridge/link-test.yaml

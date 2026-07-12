@@ -1,18 +1,13 @@
 ############################################################
-# Homebridge engine (package)  —  included by panel.yaml
+# Homebridge engine (package) — RUNTIME-config version (Phase 2c)
 #
-# Replaces the Home Assistant data + command layer with the Homebridge UI
-# REST API (homebridge-config-ui-x), validated on hardware in link-test.yaml.
-# All the non-obvious http_request settings live here (see esphome/HOMEBRIDGE.md).
-#
-# It feeds the SAME sensor/text_sensor ids the LVGL `ui_refresh` script already
-# reads (ha_state_tile*, tile*_brightness, tile*_supported_color_modes, ...), so
-# the UI is untouched. Per-tile uniqueId = ${TILE*_ENTITY}; polling + tiles are
-# gated by ${TILE*_ENABLED}.
+# Reads Homebridge URL / credentials / per-tile uniqueId+enabled from the
+# hb_config component (id: hb_cfg), set via the on-device /setup page and stored
+# in flash. Nothing here is compile-time device config anymore.
 #
 # HomeKit -> UI value mapping (ui_refresh expectations):
 #   On (bool)            -> ha_state_tile* = "on"/"off"
-#   Brightness (0-100)   -> tile*_brightness = Brightness * 2.55  (ui_refresh treats it as HA 0-255)
+#   Brightness (0-100)   -> tile*_brightness = Brightness * 2.55  (ui_refresh treats as 0-255)
 #   Hue / ColorTemperature present -> tile*_supported_color_modes = "['hs'[,'color_temp']]"
 ############################################################
 
@@ -21,8 +16,8 @@ http_request:
   timeout: 5s
   watchdog_timeout: 15s
   verify_ssl: false
-  buffer_size_rx: 4096      # Homebridge response headers ~900 B
-  buffer_size_tx: 4096      # outgoing "Authorization: Bearer <token>" ~360 B
+  buffer_size_rx: 4096
+  buffer_size_tx: 4096
 
 json:
 
@@ -38,33 +33,26 @@ globals:
     restore_value: no
     initial_value: 'false'
 
+# Poll one accessory (called per-tile). Note: url + enabled come from hb_cfg.
 script:
-  # ---- Login: POST /api/auth/login -> bearer token -------------------------
+  # ---- Login with the stored URL + credentials ----------------------------
   - id: hb_login
     mode: restart
     then:
       - if:
           condition:
-            lambda: 'return std::string("${HB_AUTH}") == "none";'
+            lambda: 'return id(hb_cfg).url().empty();'
           then:
-            - http_request.post:
-                url: ${HB_BASE_URL}/api/auth/noauth
-                capture_response: true
-                on_response:
-                  then:
-                    - script.execute:
-                        id: hb_store_token
-                        status: !lambda "return response->status_code;"
-                        resp: !lambda "return body;"
+            - logger.log: "Homebridge not configured yet — open http://<device-ip>/setup"
           else:
             - http_request.post:
-                url: ${HB_BASE_URL}/api/auth/login
+                url: !lambda 'return id(hb_cfg).url() + "/api/auth/login";'
                 capture_response: true
                 request_headers:
                   Content-Type: application/json
-                json:
-                  username: !secret hb_username
-                  password: !secret hb_password
+                body: !lambda |-
+                  return std::string("{\"username\":\"") + id(hb_cfg).user() +
+                         "\",\"password\":\"" + id(hb_cfg).pass() + "\"}";
                 on_response:
                   then:
                     - script.execute:
@@ -97,22 +85,21 @@ script:
           then:
             - script.execute: hb_poll_all
 
-  # ---- Poll all enabled tiles: GET /api/accessories/{id} -> template ids ----
+  # ---- Poll all enabled tiles --------------------------------------------
   - id: hb_poll_all
     mode: restart
     then:
       - if:
           condition:
-            lambda: 'return !id(hb_have_token);'
+            lambda: 'return !id(hb_have_token) && !id(hb_cfg).url().empty();'
           then:
             - script.execute: hb_login
           else:
             - if:
-                condition:
-                  lambda: 'return std::string("${TILE1_ENABLED}") == "true";'
+                condition: { lambda: 'return id(hb_cfg).tile_enabled(1);' }
                 then:
                   - http_request.get:
-                      url: ${HB_BASE_URL}/api/accessories/${TILE1_ENTITY}
+                      url: !lambda 'return id(hb_cfg).url() + "/api/accessories/" + id(hb_cfg).tile_uid(1);'
                       capture_response: true
                       max_response_buffer_size: 8192
                       request_headers:
@@ -126,24 +113,18 @@ script:
                               json::parse_json(body, [](JsonObject root) -> bool {
                                 JsonObject v = root["values"];
                                 if (v.isNull()) return false;
-                                if (!v["On"].isNull())
-                                  id(ha_state_tile1).publish_state(v["On"].as<bool>() ? "on" : "off");
-                                if (v["Brightness"].is<int>() || v["Brightness"].is<float>())
-                                  id(tile1_brightness).publish_state(v["Brightness"].as<float>() * 2.55f);
-                                std::string modes = "[";
-                                if (!v["Hue"].isNull()) modes += "'hs'";
-                                if (!v["ColorTemperature"].isNull()) { if (modes.size() > 1) modes += ","; modes += "'color_temp'"; }
-                                modes += "]";
-                                id(tile1_supported_color_modes).publish_state(modes);
+                                if (!v["On"].isNull()) id(ha_state_tile1).publish_state(v["On"].as<bool>() ? "on" : "off");
+                                if (v["Brightness"].is<int>() || v["Brightness"].is<float>()) id(tile1_brightness).publish_state(v["Brightness"].as<float>() * 2.55f);
+                                std::string m = "["; if (!v["Hue"].isNull()) m += "'hs'"; if (!v["ColorTemperature"].isNull()) { if (m.size() > 1) m += ","; m += "'color_temp'"; } m += "]";
+                                id(tile1_supported_color_modes).publish_state(m);
                                 return true;
                               });
                           - script.execute: ui_refresh
             - if:
-                condition:
-                  lambda: 'return std::string("${TILE2_ENABLED}") == "true";'
+                condition: { lambda: 'return id(hb_cfg).tile_enabled(2);' }
                 then:
                   - http_request.get:
-                      url: ${HB_BASE_URL}/api/accessories/${TILE2_ENTITY}
+                      url: !lambda 'return id(hb_cfg).url() + "/api/accessories/" + id(hb_cfg).tile_uid(2);'
                       capture_response: true
                       max_response_buffer_size: 8192
                       request_headers:
@@ -157,24 +138,18 @@ script:
                               json::parse_json(body, [](JsonObject root) -> bool {
                                 JsonObject v = root["values"];
                                 if (v.isNull()) return false;
-                                if (!v["On"].isNull())
-                                  id(ha_state_tile2).publish_state(v["On"].as<bool>() ? "on" : "off");
-                                if (v["Brightness"].is<int>() || v["Brightness"].is<float>())
-                                  id(tile2_brightness).publish_state(v["Brightness"].as<float>() * 2.55f);
-                                std::string modes = "[";
-                                if (!v["Hue"].isNull()) modes += "'hs'";
-                                if (!v["ColorTemperature"].isNull()) { if (modes.size() > 1) modes += ","; modes += "'color_temp'"; }
-                                modes += "]";
-                                id(tile2_supported_color_modes).publish_state(modes);
+                                if (!v["On"].isNull()) id(ha_state_tile2).publish_state(v["On"].as<bool>() ? "on" : "off");
+                                if (v["Brightness"].is<int>() || v["Brightness"].is<float>()) id(tile2_brightness).publish_state(v["Brightness"].as<float>() * 2.55f);
+                                std::string m = "["; if (!v["Hue"].isNull()) m += "'hs'"; if (!v["ColorTemperature"].isNull()) { if (m.size() > 1) m += ","; m += "'color_temp'"; } m += "]";
+                                id(tile2_supported_color_modes).publish_state(m);
                                 return true;
                               });
                           - script.execute: ui_refresh
             - if:
-                condition:
-                  lambda: 'return std::string("${TILE3_ENABLED}") == "true";'
+                condition: { lambda: 'return id(hb_cfg).tile_enabled(3);' }
                 then:
                   - http_request.get:
-                      url: ${HB_BASE_URL}/api/accessories/${TILE3_ENTITY}
+                      url: !lambda 'return id(hb_cfg).url() + "/api/accessories/" + id(hb_cfg).tile_uid(3);'
                       capture_response: true
                       max_response_buffer_size: 8192
                       request_headers:
@@ -188,24 +163,18 @@ script:
                               json::parse_json(body, [](JsonObject root) -> bool {
                                 JsonObject v = root["values"];
                                 if (v.isNull()) return false;
-                                if (!v["On"].isNull())
-                                  id(ha_state_tile3).publish_state(v["On"].as<bool>() ? "on" : "off");
-                                if (v["Brightness"].is<int>() || v["Brightness"].is<float>())
-                                  id(tile3_brightness).publish_state(v["Brightness"].as<float>() * 2.55f);
-                                std::string modes = "[";
-                                if (!v["Hue"].isNull()) modes += "'hs'";
-                                if (!v["ColorTemperature"].isNull()) { if (modes.size() > 1) modes += ","; modes += "'color_temp'"; }
-                                modes += "]";
-                                id(tile3_supported_color_modes).publish_state(modes);
+                                if (!v["On"].isNull()) id(ha_state_tile3).publish_state(v["On"].as<bool>() ? "on" : "off");
+                                if (v["Brightness"].is<int>() || v["Brightness"].is<float>()) id(tile3_brightness).publish_state(v["Brightness"].as<float>() * 2.55f);
+                                std::string m = "["; if (!v["Hue"].isNull()) m += "'hs'"; if (!v["ColorTemperature"].isNull()) { if (m.size() > 1) m += ","; m += "'color_temp'"; } m += "]";
+                                id(tile3_supported_color_modes).publish_state(m);
                                 return true;
                               });
                           - script.execute: ui_refresh
             - if:
-                condition:
-                  lambda: 'return std::string("${TILE4_ENABLED}") == "true";'
+                condition: { lambda: 'return id(hb_cfg).tile_enabled(4);' }
                 then:
                   - http_request.get:
-                      url: ${HB_BASE_URL}/api/accessories/${TILE4_ENTITY}
+                      url: !lambda 'return id(hb_cfg).url() + "/api/accessories/" + id(hb_cfg).tile_uid(4);'
                       capture_response: true
                       max_response_buffer_size: 8192
                       request_headers:
@@ -219,20 +188,65 @@ script:
                               json::parse_json(body, [](JsonObject root) -> bool {
                                 JsonObject v = root["values"];
                                 if (v.isNull()) return false;
-                                if (!v["On"].isNull())
-                                  id(ha_state_tile4).publish_state(v["On"].as<bool>() ? "on" : "off");
-                                if (v["Brightness"].is<int>() || v["Brightness"].is<float>())
-                                  id(tile4_brightness).publish_state(v["Brightness"].as<float>() * 2.55f);
-                                std::string modes = "[";
-                                if (!v["Hue"].isNull()) modes += "'hs'";
-                                if (!v["ColorTemperature"].isNull()) { if (modes.size() > 1) modes += ","; modes += "'color_temp'"; }
-                                modes += "]";
-                                id(tile4_supported_color_modes).publish_state(modes);
+                                if (!v["On"].isNull()) id(ha_state_tile4).publish_state(v["On"].as<bool>() ? "on" : "off");
+                                if (v["Brightness"].is<int>() || v["Brightness"].is<float>()) id(tile4_brightness).publish_state(v["Brightness"].as<float>() * 2.55f);
+                                std::string m = "["; if (!v["Hue"].isNull()) m += "'hs'"; if (!v["ColorTemperature"].isNull()) { if (m.size() > 1) m += ","; m += "'color_temp'"; } m += "]";
+                                id(tile4_supported_color_modes).publish_state(m);
+                                return true;
+                              });
+                          - script.execute: ui_refresh
+            - if:
+                condition: { lambda: 'return id(hb_cfg).tile_enabled(5);' }
+                then:
+                  - http_request.get:
+                      url: !lambda 'return id(hb_cfg).url() + "/api/accessories/" + id(hb_cfg).tile_uid(5);'
+                      capture_response: true
+                      max_response_buffer_size: 8192
+                      request_headers:
+                        Authorization: !lambda "return id(hb_auth_header).c_str();"
+                        Accept-Encoding: identity
+                      on_response:
+                        then:
+                          - lambda: |-
+                              int sc = response->status_code;
+                              if (sc < 200 || sc >= 300) { if (sc == 401) id(hb_have_token) = false; return; }
+                              json::parse_json(body, [](JsonObject root) -> bool {
+                                JsonObject v = root["values"];
+                                if (v.isNull()) return false;
+                                if (!v["On"].isNull()) id(ha_state_tile5).publish_state(v["On"].as<bool>() ? "on" : "off");
+                                if (v["Brightness"].is<int>() || v["Brightness"].is<float>()) id(tile5_brightness).publish_state(v["Brightness"].as<float>() * 2.55f);
+                                std::string m = "["; if (!v["Hue"].isNull()) m += "'hs'"; if (!v["ColorTemperature"].isNull()) { if (m.size() > 1) m += ","; m += "'color_temp'"; } m += "]";
+                                id(tile5_supported_color_modes).publish_state(m);
+                                return true;
+                              });
+                          - script.execute: ui_refresh
+            - if:
+                condition: { lambda: 'return id(hb_cfg).tile_enabled(6);' }
+                then:
+                  - http_request.get:
+                      url: !lambda 'return id(hb_cfg).url() + "/api/accessories/" + id(hb_cfg).tile_uid(6);'
+                      capture_response: true
+                      max_response_buffer_size: 8192
+                      request_headers:
+                        Authorization: !lambda "return id(hb_auth_header).c_str();"
+                        Accept-Encoding: identity
+                      on_response:
+                        then:
+                          - lambda: |-
+                              int sc = response->status_code;
+                              if (sc < 200 || sc >= 300) { if (sc == 401) id(hb_have_token) = false; return; }
+                              json::parse_json(body, [](JsonObject root) -> bool {
+                                JsonObject v = root["values"];
+                                if (v.isNull()) return false;
+                                if (!v["On"].isNull()) id(ha_state_tile6).publish_state(v["On"].as<bool>() ? "on" : "off");
+                                if (v["Brightness"].is<int>() || v["Brightness"].is<float>()) id(tile6_brightness).publish_state(v["Brightness"].as<float>() * 2.55f);
+                                std::string m = "["; if (!v["Hue"].isNull()) m += "'hs'"; if (!v["ColorTemperature"].isNull()) { if (m.size() > 1) m += ","; m += "'color_temp'"; } m += "]";
+                                id(tile6_supported_color_modes).publish_state(m);
                                 return true;
                               });
                           - script.execute: ui_refresh
 
-  # ---- Generic command: PUT /api/accessories/{id} {characteristicType,value}
+  # ---- Command: PUT a characteristic on the given uniqueId ----------------
   - id: hb_put
     mode: queued
     parameters:
@@ -242,7 +256,7 @@ script:
     then:
       - http_request.send:
           method: PUT
-          url: !lambda 'return std::string("${HB_BASE_URL}/api/accessories/") + uid;'
+          url: !lambda 'return id(hb_cfg).url() + "/api/accessories/" + uid;'
           request_headers:
             Content-Type: application/json
             Authorization: !lambda "return id(hb_auth_header).c_str();"
@@ -250,7 +264,6 @@ script:
       - delay: 250ms
       - script.execute: hb_poll_all
 
-  # ---- Light color: two PUTs (Hue then Saturation) -------------------------
   - id: hb_put_hue_sat
     mode: queued
     parameters:
@@ -260,7 +273,7 @@ script:
     then:
       - http_request.send:
           method: PUT
-          url: !lambda 'return std::string("${HB_BASE_URL}/api/accessories/") + uid;'
+          url: !lambda 'return id(hb_cfg).url() + "/api/accessories/" + uid;'
           request_headers:
             Content-Type: application/json
             Authorization: !lambda "return id(hb_auth_header).c_str();"
@@ -268,7 +281,7 @@ script:
       - delay: 120ms
       - http_request.send:
           method: PUT
-          url: !lambda 'return std::string("${HB_BASE_URL}/api/accessories/") + uid;'
+          url: !lambda 'return id(hb_cfg).url() + "/api/accessories/" + uid;'
           request_headers:
             Content-Type: application/json
             Authorization: !lambda "return id(hb_auth_header).c_str();"
