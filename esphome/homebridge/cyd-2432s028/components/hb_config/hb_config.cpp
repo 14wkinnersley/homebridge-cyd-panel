@@ -49,6 +49,7 @@ details[open] summary:before{content:"\25BE ";}
 .save:active{opacity:.9}
 #msg{text-align:center;font-size:13px;margin-top:8px;min-height:16px}
 .ok{color:var(--ok);font-weight:600}
+.err{color:#c0392b;font-weight:600}
 </style></head><body><div class="wrap">
 <div class="hdr"><h1>Smart Panel Setup</h1><p>Configure your Homebridge wall panel</p></div>
 
@@ -57,25 +58,23 @@ details[open] summary:before{content:"\25BE ";}
 <label>Homebridge URL</label><input id="url" class="mono" placeholder="http://192.168.1.50:8581">
 <div class="row"><div><label>Username</label><input id="user"></div>
 <div><label>Password</label><input id="pass" type="password"></div></div>
+<div class="hint">Enter your Homebridge details and tap Save. Your tiles appear once the panel connects.</div>
 </div>
 
-<div class="card"><h2>Tiles</h2>
-<button type="button" class="ghost" onclick="loadDevices()">Load devices from Homebridge</button>
-<div id="dmsg" class="hint">Enter your URL + login and tap Save first, then load the list to pick devices by name.</div>
+<div class="card" id="tilecard" style="display:none"><h2>Tiles</h2>
+<div id="dmsg" class="hint">Pick a device for each tile, then tap Save.</div>
 <div id="tiles"></div>
 </div>
 </div>
 <div class="bar"><div class="inner"><button class="save" onclick="save()">Save</button><div id="msg"></div></div></div>
 <script>
 var TYPES=['light','switch','fan','cover','climate','scene','script'];
-var DEVICES=null;
+var DEVICES=null,connected=false;
+function $(id){return document.getElementById(id)}
 function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
-function loadDevices(n){n=n||0;$('dmsg').textContent='Loading devices from Homebridge...';
- fetch('/hbdevices').then(function(r){return r.json()}).then(function(d){
-  if(d&&d.loading){if(n>12){$('dmsg').textContent='Timed out. Save your URL + login, then try again.';return;}
-   setTimeout(function(){loadDevices(n+1)},1500);return;}
-  DEVICES=d;fillPickers();$('dmsg').textContent=((d&&d.length)||0)+' devices loaded - pick one per tile.';})
- .catch(function(){$('dmsg').textContent='Could not load devices (save your URL + login first).';});}
+function setMsg(h){$('msg').innerHTML=h;}
+function showTiles(){connected=true;$('tilecard').style.display='';}
+function hideTiles(){connected=false;$('tilecard').style.display='none';}
 function fillPickers(){if(!DEVICES)return;for(var i=0;i<6;i++){var sel=$('pick'+i);if(!sel)continue;
   var cur=($('uid'+i).value||'');var h='<option value="">- pick a device -</option>';
   DEVICES.forEach(function(dev){h+='<option value="'+esc(dev.u)+'"'+(dev.u===cur?' selected':'')+'>'+esc(dev.n||dev.u)+'</option>';});
@@ -84,23 +83,35 @@ function onPick(i){var sel=$('pick'+i),uid=sel.value;if(!uid)return;$('uid'+i).v
   var nm=sel.options[sel.selectedIndex].text;if(!$('title'+i).value)$('title'+i).value=nm;}
 function row(i,t){t=t||{};return '<div class="tile">'
 +'<div class="th"><span class="badge">'+(i+1)+'</span><b>Tile '+(i+1)+'</b></div>'
-+'<label>Device</label><select class="pick" id="pick'+i+'" onchange="onPick('+i+')"><option value="">- load list, then pick -</option></select>'
++'<label>Device</label><select class="pick" id="pick'+i+'" onchange="onPick('+i+')"><option value="">- pick a device -</option></select>'
 +'<div class="row"><div><label>Title</label><input id="title'+i+'" value="'+esc(t.title||'')+'"></div>'
 +'<div><label>Type</label><select id="type'+i+'">'+TYPES.map(function(x){return '<option '+(t.type==x?'selected':'')+'>'+x+'</option>'}).join('')+'</select></div></div>'
 +'<label class="chk"><input type="checkbox" id="en'+i+'" '+(t.enabled?'checked':'')+'> Show this tile</label>'
 +'<details><summary>Advanced &#183; uniqueId</summary><input id="uid'+i+'" class="mono" value="'+esc(t.uid||'')+'" placeholder="paste a uniqueId if not in the list above"></details>'
 +'</div>'}
-function $(id){return document.getElementById(id)}
+// Poll /hbdevices: an array means the panel logged in and read the accessory
+// list (connection verified); {loading:true} means still trying; a timeout means
+// it never connected (bad URL/login).
+function connect(saving){setMsg('Connecting to Homebridge&hellip;');var tries=0;
+ (function poll(){fetch('/hbdevices').then(function(r){return r.json()}).then(function(d){
+   if(d&&d.loading){if(tries++>25){fail();return;}setTimeout(poll,1000);return;}
+   DEVICES=d||[];fillPickers();showTiles();
+   var n=DEVICES.length,dev=n+' device'+(n===1?'':'s');
+   setMsg('<span class="ok">'+(saving?'Saved &#10003; &mdash; connected, '+dev:'Connected &#10003; '+dev+' found')+'</span>');
+  }).catch(function(){fail();});})();
+ function fail(){hideTiles();setMsg('<span class="err">Couldn&rsquo;t connect. Check the URL, username and password, then tap Save again.</span>');}}
 function load(){fetch('/hbcfg').then(function(r){return r.json()}).then(function(c){
-$('room').value=c.room||'';$('url').value=c.url||'';$('user').value=c.user||'';$('pass').value=c.pass||'';
-var h='';for(var i=0;i<6;i++)h+=row(i,(c.tiles||[])[i]);$('tiles').innerHTML=h;fillPickers();})}
-function save(){var t=[];for(var i=0;i<6;i++)t.push({uid:$('uid'+i).value,title:$('title'+i).value,type:$('type'+i).value,enabled:$('en'+i).checked});
-var s=JSON.stringify({room:$('room').value,url:$('url').value,user:$('user').value,pass:$('pass').value,tiles:t});
+ $('room').value=c.room||'';$('url').value=c.url||'';$('user').value=c.user||'';$('pass').value=c.pass||'';
+ var h='';for(var i=0;i<6;i++)h+=row(i,(c.tiles||[])[i]);$('tiles').innerHTML=h;
+ if(c.url&&c.user)connect(false);})}
+function save(){var u=($('url').value||'').trim().replace(/\/+$/,'');$('url').value=u;
+var t=[];for(var i=0;i<6;i++)t.push({uid:$('uid'+i).value,title:$('title'+i).value,type:$('type'+i).value,enabled:$('en'+i).checked});
+var s=JSON.stringify({room:$('room').value,url:u,user:$('user').value,pass:$('pass').value,tiles:t});
 var CH=200,parts=[];for(var i=0;i<s.length;i+=CH)parts.push(s.slice(i,i+CH));if(!parts.length)parts=[''];
-$('msg').textContent='Saving...';
-(function send(k){if(k>=parts.length){$('msg').innerHTML='<span class="ok">Saved &#10003; &mdash; changes apply live</span>';return;}
+setMsg('Saving&hellip;');
+(function send(k){if(k>=parts.length){connect(true);return;}
 var b='part='+encodeURIComponent(parts[k])+'&first='+(k===0?'1':'0')+'&last='+(k===parts.length-1?'1':'0');
-fetch('/hbcfg',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(function(){send(k+1)}).catch(function(){$('msg').textContent='Save error'})})(0);}
+fetch('/hbcfg',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(function(){send(k+1)}).catch(function(){setMsg('<span class="err">Save error</span>')})})(0);}
 load();
 </script></body></html>)HTML";
 
@@ -182,12 +193,19 @@ void HbConfig::save_(const std::string &json) {
     ESP_LOGW(TAG, "Config too large (%d B), not saved", (int) json.size());
     return;
   }
+  // Remember the old connection details; if they change, drop the cached device
+  // list so the /setup page re-verifies the connection with the new credentials.
+  std::string old_url = this->url_, old_user = this->user_, old_pass = this->pass_;
   this->config_json_ = json;
   memset(this->save_buf_, 0, CFG_MAX);
   strncpy(this->save_buf_, json.c_str(), CFG_MAX - 1);
   this->pref_.save(&this->save_buf_);
   global_preferences->sync();
   this->parse_();
+  if (this->url_ != old_url || this->user_ != old_user || this->pass_ != old_pass) {
+    this->devices_ready_ = false;
+    this->want_devices_ = false;
+  }
   ESP_LOGI(TAG, "Saved config (%d B), room='%s'", (int) json.size(), this->room_.c_str());
 }
 
@@ -201,6 +219,16 @@ void HbConfig::parse_() {
   json::parse_json(this->config_json_, [this](JsonObject root) -> bool {
     this->room_ = root["room"] | "";
     this->url_ = root["url"] | "";
+    // Normalize: strip surrounding whitespace and any trailing '/' so the engine's
+    // url() + "/api/..." never yields a double slash (a common paste mistake).
+    {
+      size_t b = this->url_.find_first_not_of(" \t\r\n");
+      size_t e = this->url_.find_last_not_of(" \t\r\n/");
+      if (b == std::string::npos)
+        this->url_.clear();
+      else
+        this->url_ = this->url_.substr(b, e - b + 1);
+    }
     this->user_ = root["user"] | "";
     this->pass_ = root["pass"] | "";
     JsonArray tiles = root["tiles"];
