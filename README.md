@@ -10,10 +10,11 @@ A 3D-printable enclosure with adjustable tilt for an ESP32 2.8" ILI9341 touchscr
 Includes ready-to-flash YAML configs for the ESP32-2432S028 (Cheap Yellow Display) and a standalone ILI9341 + external ESP32 wiring variant.
 
 > **Using Homebridge instead of Home Assistant?** The stock configs below assume
-> Home Assistant. For a **Homebridge** setup (no HA, no MQTT — via the Homebridge
-> UI REST API), see **[esphome/HOMEBRIDGE.md](esphome/HOMEBRIDGE.md)**. Start with
-> the [link-test config](esphome/homebridge/link-test.yaml) to validate the
-> connection, then port the full UI.
+> Home Assistant. There's a full **Homebridge** build (no HA, no MQTT — via the
+> Homebridge UI REST API) that you **flash once, then configure from a web page**:
+> open `http://<panel-ip>/setup`, enter your Homebridge URL + login + room, pick
+> your devices by name, and Save — changes apply live, no YAML editing. See
+> **[esphome/HOMEBRIDGE.md](esphome/HOMEBRIDGE.md)** for the quick start.
 
 Multiple mounting options are supported:
 

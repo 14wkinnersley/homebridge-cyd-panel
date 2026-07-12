@@ -15,31 +15,58 @@ static const char *const DEFAULT_CFG =
 static const char SETUP_HTML[] = R"HTML(<!doctype html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Panel Setup</title>
 <style>
-body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#0b1220;color:#e5e7eb}
-.wrap{max-width:640px;margin:0 auto;padding:20px 16px 60px}
-h1{font-size:20px;margin:8px 0 16px}h3{margin:20px 0 4px;color:#93a3b8}
-label{display:block;margin:10px 0 4px;font-size:13px;color:#93a3b8}
-input,select{width:100%;padding:10px;border-radius:8px;border:1px solid #2a3550;background:#131c31;color:#e5e7eb;box-sizing:border-box;font-size:14px}
-.tile{border:1px solid #2a3550;border-radius:12px;padding:12px;margin:10px 0;background:#0f1730}
-.row{display:flex;gap:8px}.row>*{flex:1}
-button{margin-top:18px;width:100%;padding:13px;border:0;border-radius:10px;background:#2563eb;color:#fff;font-size:15px;font-weight:600}
-#msg{margin-top:10px;text-align:center}.ok{color:#34d399}.chk{display:flex;align-items:center;gap:8px;margin-top:8px}
-.chk input{width:auto}
-button.ghost{background:#0f1730;border:1px solid #2a3550;color:#93a3b8;font-weight:500;margin-top:10px}
-.hint{font-size:12px;color:#93a3b8;margin:6px 0}
-select.pick{margin-bottom:2px}
+:root{--bg:#0b0f17;--card:#151b27;--card2:#0f1522;--line:#243049;--muted:#8b98b0;--text:#e8edf5;--accent:#0a84ff;--ok:#30d158}
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;margin:0;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased}
+.wrap{max-width:600px;margin:0 auto;padding:24px 16px 120px}
+.hdr{display:flex;align-items:center;gap:12px;margin:6px 2px 20px}
+.hdr .ic{font-size:30px;line-height:1}
+.hdr h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.02em}
+.hdr p{margin:3px 0 0;font-size:13px;color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin:14px 0}
+.card>h2{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:0 0 8px;font-weight:600}
+label{display:block;margin:12px 0 5px;font-size:13px;color:var(--muted)}
+input,select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--text);font-size:15px;outline:none;transition:border-color .15s}
+input:focus,select:focus{border-color:var(--accent)}
+.row{display:flex;gap:10px}.row>*{flex:1;min-width:0}
+.tile{border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0;background:var(--card2)}
+.tile .th{display:flex;align-items:center;gap:9px;margin-bottom:2px}
+.badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:7px;background:var(--accent);color:#fff;font-size:12px;font-weight:700}
+.tile .th b{font-size:14px}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+.chk{display:flex;align-items:center;gap:9px;margin-top:12px;font-size:14px;color:var(--text)}
+.chk input{width:auto;transform:scale(1.15)}
+.ghost{width:100%;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--card2);color:var(--accent);font-size:14px;font-weight:600;cursor:pointer}
+.hint{font-size:12px;color:var(--muted);margin:8px 2px 2px}
+details{margin-top:10px}
+details summary{cursor:pointer;color:var(--muted);font-size:12px;list-style:none;user-select:none}
+details summary::-webkit-details-marker{display:none}
+details summary:before{content:"\25B8 ";}
+details[open] summary:before{content:"\25BE ";}
+.bar{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(14px + env(safe-area-inset-bottom));background:linear-gradient(180deg,rgba(11,15,23,0),var(--bg) 34%)}
+.bar .inner{max-width:600px;margin:0 auto}
+.save{width:100%;padding:14px;border:0;border-radius:12px;background:var(--accent);color:#fff;font-size:16px;font-weight:600;cursor:pointer}
+.save:active{opacity:.85}
+#msg{text-align:center;font-size:13px;margin-top:8px;min-height:16px}
+.ok{color:var(--ok);font-weight:600}
 </style></head><body><div class="wrap">
-<h1>&#128241; Smart Panel Setup</h1>
-<label>Room name (shown top-left)</label><input id="room">
-<label>Homebridge URL</label><input id="url" placeholder="http://192.168.1.50:8581">
+<div class="hdr"><div class="ic">&#127968;</div><div><h1>Smart Panel Setup</h1><p>Configure your Homebridge wall panel</p></div></div>
+
+<div class="card"><h2>Homebridge</h2>
+<label>Room name (shown top-left on the panel)</label><input id="room" placeholder="Office">
+<label>Homebridge URL</label><input id="url" class="mono" placeholder="http://192.168.1.50:8581">
 <div class="row"><div><label>Username</label><input id="user"></div>
 <div><label>Password</label><input id="pass" type="password"></div></div>
-<h3>Tiles</h3>
-<button type="button" class="ghost" onclick="loadDevices()">&#128269; Load device list from Homebridge</button>
-<div id="dmsg" class="hint">Tip: enter your Homebridge URL + login and Save first, then load the list to pick devices by name.</div>
+</div>
+
+<div class="card"><h2>Tiles</h2>
+<button type="button" class="ghost" onclick="loadDevices()">&#128269;&nbsp; Load devices from Homebridge</button>
+<div id="dmsg" class="hint">Enter your URL + login and tap Save first, then load the list to pick devices by name.</div>
 <div id="tiles"></div>
-<button onclick="save()">Save</button><div id="msg"></div>
-</div><script>
+</div>
+</div>
+<div class="bar"><div class="inner"><button class="save" onclick="save()">Save</button><div id="msg"></div></div></div>
+<script>
 var TYPES=['light','switch','fan','cover','climate','scene','script'];
 var DEVICES=null;
 function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
@@ -55,12 +82,14 @@ function fillPickers(){if(!DEVICES)return;for(var i=0;i<6;i++){var sel=$('pick'+
   sel.innerHTML=h;}}
 function onPick(i){var sel=$('pick'+i),uid=sel.value;if(!uid)return;$('uid'+i).value=uid;
   var nm=sel.options[sel.selectedIndex].text;if(!$('title'+i).value)$('title'+i).value=nm;}
-function row(i,t){t=t||{};return '<div class="tile"><b>Tile '+(i+1)+'</b>'
+function row(i,t){t=t||{};return '<div class="tile">'
++'<div class="th"><span class="badge">'+(i+1)+'</span><b>Tile '+(i+1)+'</b></div>'
 +'<label>Device</label><select class="pick" id="pick'+i+'" onchange="onPick('+i+')"><option value="">- load list, then pick -</option></select>'
-+'<label>Accessory uniqueId</label><input id="uid'+i+'" value="'+(t.uid||'')+'">'
-+'<div class="row"><div><label>Title</label><input id="title'+i+'" value="'+(t.title||'')+'"></div>'
++'<div class="row"><div><label>Title</label><input id="title'+i+'" value="'+esc(t.title||'')+'"></div>'
 +'<div><label>Type</label><select id="type'+i+'">'+TYPES.map(function(x){return '<option '+(t.type==x?'selected':'')+'>'+x+'</option>'}).join('')+'</select></div></div>'
-+'<label class="chk"><input type="checkbox" id="en'+i+'" '+(t.enabled?'checked':'')+'> Show this tile</label></div>'}
++'<label class="chk"><input type="checkbox" id="en'+i+'" '+(t.enabled?'checked':'')+'> Show this tile</label>'
++'<details><summary>Advanced &#183; uniqueId</summary><input id="uid'+i+'" class="mono" value="'+esc(t.uid||'')+'" placeholder="paste a uniqueId if not in the list above"></details>'
++'</div>'}
 function $(id){return document.getElementById(id)}
 function load(){fetch('/hbcfg').then(function(r){return r.json()}).then(function(c){
 $('room').value=c.room||'';$('url').value=c.url||'';$('user').value=c.user||'';$('pass').value=c.pass||'';
@@ -69,7 +98,7 @@ function save(){var t=[];for(var i=0;i<6;i++)t.push({uid:$('uid'+i).value,title:
 var s=JSON.stringify({room:$('room').value,url:$('url').value,user:$('user').value,pass:$('pass').value,tiles:t});
 var CH=200,parts=[];for(var i=0;i<s.length;i+=CH)parts.push(s.slice(i,i+CH));if(!parts.length)parts=[''];
 $('msg').textContent='Saving...';
-(function send(k){if(k>=parts.length){$('msg').innerHTML='<span class="ok">Saved &#10003;</span>';return;}
+(function send(k){if(k>=parts.length){$('msg').innerHTML='<span class="ok">Saved &#10003; &mdash; changes apply live</span>';return;}
 var b='part='+encodeURIComponent(parts[k])+'&first='+(k===0?'1':'0')+'&last='+(k===parts.length-1?'1':'0');
 fetch('/hbcfg',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(function(){send(k+1)}).catch(function(){$('msg').textContent='Save error'})})(0);}
 load();

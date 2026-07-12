@@ -18,11 +18,11 @@ no Home-app automation glue.
   └──────────────┘  PUT  commands  └────────────────────────┘   state     └───────────┘
 ```
 
-- **Control (out):** `PUT /api/accessories/{uniqueId}` with
-  `{"characteristicType":"On","value":true}`
-- **State (in):** `GET /api/accessories/{uniqueId}` → a `values` map of the
-  accessory's HomeKit characteristics, polled on an interval
-- **Auth:** `POST /api/auth/login` → a bearer token used on every request
+The panel is **configured entirely from a web page it serves** — you flash the
+firmware once, then set your Homebridge URL, login, room name and tiles at
+`http://<panel-ip>/setup`. Nothing device-specific lives in the YAML, so the same
+firmware works for any room or set of accessories, and the repo configs contain
+only placeholders.
 
 > ⚠️ **Security:** Accessory control requires Homebridge **insecure mode**.
 > Anyone with network access to the Homebridge port + PIN can control your
@@ -32,198 +32,189 @@ no Home-app automation glue.
 
 ---
 
-## Start here: validate the link before porting the UI
+## Quick start
 
-Porting the full tile UI is a large change, and it can't be flash-tested for
-you. So the first step is a tiny, self-contained config that proves the ESP32 ↔
-Homebridge round-trip on your hardware and network:
+### 1. Enable Accessory Control in Homebridge
 
-**[homebridge/link-test.yaml](homebridge/link-test.yaml)**
+Homebridge UI → top-right menu → **Settings** → **Homebridge Settings → Enable
+accessory control (insecure mode)** → on, then restart Homebridge. (Equivalent to
+starting Homebridge with the `-I` flag.) Without this, `/api/accessories` returns
+nothing to control.
 
-It logs in, reads one accessory, and toggles it — showing the result on the
-onboard RGB LED and in the ESPHome logs. Once this works, the full port is
-mostly mechanical. Steps below get you there.
+### 2. Flash the panel (once)
+
+You don't have Home Assistant, so install standalone ESPHome:
+
+```bash
+pip install esphome
+# or: docker run --rm -v "${PWD}:/config" -it ghcr.io/esphome/esphome
+```
+
+From the `esphome/` folder, copy the example secrets and fill in **Wi-Fi + an OTA
+password + an API key** (the Homebridge URL/credentials are *not* needed here —
+you'll enter those on the web page):
+
+```bash
+cp secrets.yaml.example secrets.yaml   # edit wifi_ssid / wifi_password / ota_password / smartdisplay_api_key
+esphome run homebridge/cyd-2432s028/home-like.yaml   # pick your serial port
+```
+
+> **Display controller:** the config defaults to **ST7789V** (what this build was
+> validated on). Many CYDs are **ILI9341** — if the screen is blank, garbled, or
+> mis-rotated, change the display `model:` in the YAML to match your board.
+
+### 3. Configure at `http://<panel-ip>/setup`
+
+The panel's IP is printed in the ESPHome logs on boot (and in your router). Open
+`http://<panel-ip>/setup` from any phone or computer on the same network:
+
+1. Enter your **Homebridge URL** (LAN address, e.g. `http://192.168.1.50:8581`),
+   **username**, **password**, and a **room name**, then tap **Save**.
+2. Tap **Load devices from Homebridge**. The panel pulls your accessory list and
+   fills a dropdown for each tile.
+3. For each tile: pick a **device**, set a **title** and **type**
+   (light / switch / fan / cover / climate / scene / script), and tick
+   **Show this tile**.
+4. Tap **Save**. Changes apply **live** — the panel updates within about a second,
+   no reflash and no reboot.
+
+That's it. The config (URL, credentials, room, tiles) is stored in the panel's
+flash and survives reboots.
+
+> **Large Homebridge installs:** the panel fetches the lightweight
+> `/api/accessories/layout` list, but a no-PSRAM ESP32 has limited RAM. If you run
+> **many** accessories, the dropdown may show only a subset — any device that
+> isn't listed can still be added by pasting its `uniqueId` under a tile's
+> **Advanced · uniqueId** expander (see *Finding a uniqueId* below).
 
 ---
 
-## Step 1 — Enable Accessory Control in Homebridge
+## Finding a `uniqueId` manually
 
-In the Homebridge UI: top-right menu → **Settings** → toggle
-**Homebridge Settings → Enable accessory control (insecure mode)** on, then
-restart Homebridge. (Equivalent to starting Homebridge with the `-I` flag.)
-
-Without this, `/api/accessories` returns nothing to control.
-
-## Step 2 — Install standalone ESPHome
-
-You don't have Home Assistant, so you won't have the ESPHome add-on. Install
-ESPHome on any machine (your choice):
+Every accessory is addressed by a stable `uniqueId` (a hash), not by name. The
+device picker resolves these for you, but for a device that isn't listed:
 
 ```bash
-# pip
-pip install esphome
-
-# or Docker
-docker run --rm -v "${PWD}:/config" -it ghcr.io/esphome/esphome
-```
-
-Then work from the `esphome/` folder of this repo. Copy the example secrets:
-
-```bash
-cp secrets.yaml.example secrets.yaml   # then edit secrets.yaml
-```
-
-## Step 3 — Get a token and find your accessories' `uniqueId`
-
-Every accessory is addressed by a stable `uniqueId` (a hash), **not** by name.
-Grab a token, then list accessories:
-
-```bash
-# 1) Log in (default creds are admin/admin — use yours)
+# 1) Log in (use your UI credentials)
 TOKEN=$(curl -s -X POST http://192.168.1.50:8581/api/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"YOUR_PASSWORD"}' | jq -r .access_token)
 
-# 2) List accessories with their uniqueId, type, and current values
+# 2) List accessories with their uniqueId, type, and name
 curl -s http://192.168.1.50:8581/api/accessories \
   -H "Authorization: Bearer $TOKEN" \
-  | jq '.[] | {uniqueId, type, name: .serviceName, values}'
+  | jq '.[] | {uniqueId, type, name: .serviceName}'
 ```
 
-Each entry looks like:
+Paste the `uniqueId` into the tile's **Advanced · uniqueId** field on `/setup`.
+You can also browse the API interactively at `http://<homebridge-ip>:8581/swagger`.
 
-```json
-{
-  "uniqueId": "e2a3f1c9b8...",
-  "type": "Lightbulb",
-  "name": "Desk Lamp",
-  "values": { "On": 1, "Brightness": 80 }
-}
-```
+---
 
-Copy the `uniqueId` of a light or switch you can watch into
-`HB_TEST_ACCESSORY_ID` in [link-test.yaml](homebridge/link-test.yaml).
+## Optional: validate the raw link first
 
-> Tip: you can also browse the whole API interactively at
-> `http://<homebridge-ip>:8581/swagger`.
+If nothing works and you want to isolate the problem, flash the tiny
+**[homebridge/link-test.yaml](homebridge/link-test.yaml)** config. It logs in,
+reads one accessory and toggles it, showing the result on the onboard RGB LED and
+in the ESPHome logs — proving the ESP32 ↔ Homebridge round-trip on your hardware
+before you worry about the UI. Set `HB_BASE_URL` + `HB_TEST_ACCESSORY_ID` in that
+file and `hb_username`/`hb_password` in `secrets.yaml`.
 
-## Step 4 — Set your URL and credentials
+| LED   | Meaning                                              |
+|-------|------------------------------------------------------|
+| RED   | No token yet, or the last request failed (see logs)  |
+| BLUE  | Logged in; the test accessory reports **OFF**        |
+| GREEN | Logged in; the test accessory reports **ON**         |
 
-- **Base URL** → `HB_BASE_URL` substitution at the top of the config.
-  Prefer the **LAN** address (`http://192.168.1.50:8581`). The public
-  `https://hb.example.com` works too, but TLS is heavy on the ESP32 and a wall
-  panel shouldn't depend on your reverse proxy. This value lives only in your
-  local copy — leave the committed placeholder as-is.
-- **Credentials** → `hb_username` / `hb_password` in `secrets.yaml`
-  (gitignored). These are used only to fetch the bearer token.
-
-## Step 5 — Flash and interpret the result
-
-```bash
-esphome run homebridge/link-test.yaml
-```
-
-Watch the onboard LED and the logs:
-
-| LED    | Meaning                                                            |
-|--------|-------------------------------------------------------------------|
-| RED    | No token yet, or the last request failed (see logs for HTTP code) |
-| BLUE   | Logged in, and the test accessory reports **OFF**                 |
-| GREEN  | Logged in, and the test accessory reports **ON**                  |
-
-Then, from the ESPHome dashboard/log view, press **"Homebridge: Toggle test
-accessory"** — the real device should switch, and the LED should follow it
-within a poll cycle. Toggle the device from the Home app instead, and the LED
-should still track it. That's the full read + write loop confirmed.
-
-Common failures:
-- `login FAILED (http 401)` — wrong `hb_username`/`hb_password`.
-- `poll failed (http 401)` right after login — token/session issue; check the
-  Homebridge UI session timeout.
-- `poll failed (http 404)` — wrong `HB_TEST_ACCESSORY_ID`, or insecure mode off.
-- Everything times out — wrong `HB_BASE_URL`, firewall, or (for `https://`)
-  set `verify_ssl: false` under `http_request:`.
+Common failures: `login FAILED (http 401)` = wrong credentials; `http 404` on a
+read = wrong `uniqueId` or insecure mode off; everything times out = wrong URL,
+firewall, or (for `https://`) needs `verify_ssl: false`.
 
 ---
 
 ## Authentication options
 
-- **`HB_AUTH: "form"` (default):** the panel logs in with your UI credentials
-  and refreshes the token every 6h (the UI session default is 8h). Robust and
-  the recommended choice.
-- **`HB_AUTH: "none"`:** if you disable Homebridge UI authentication
-  (UI → Settings → *Authentication: None*), the panel calls `/api/auth/noauth`
-  instead. Simpler, but only acceptable on a fully trusted LAN — combined with
-  insecure mode, anyone on the network can control your home.
+- **Form login (default):** the panel logs in with your UI credentials and
+  refreshes the token every 6h. Robust and recommended.
+- **No auth:** if you disable Homebridge UI authentication (UI → Settings →
+  *Authentication: None*), the API is reachable without a token. Simpler, but only
+  acceptable on a fully trusted LAN — combined with insecure mode, anyone on the
+  network can control your home.
+
+---
+
+## How it maps to HomeKit
+
+The panel translates each tile action/state to HomeKit characteristics via the API:
+
+- **Control (out):** `PUT /api/accessories/{uniqueId}` with
+  `{"characteristicType":"On","value":true}`
+- **State (in):** `GET /api/accessories/{uniqueId}` → a `values` map, polled every
+  few seconds
+- **Auth:** `POST /api/auth/login` → a bearer token used on every request
+
+| Tile type | HomeKit characteristic(s)                                                             |
+|-----------|---------------------------------------------------------------------------------------|
+| light     | `On` (bool); `Brightness` **0-100**                                                    |
+| light color | `Hue` 0-360 + `Saturation` 0-100; `ColorTemperature` (mireds)                        |
+| switch / outlet | `On` (bool)                                                                     |
+| scene / script | usually a stateless `On` switch accessory                                        |
+| cover     | `TargetPosition` / `CurrentPosition` **0-100** (100 = open)                            |
+| fan       | `On` / `Active`; `RotationSpeed` 0-100 (HomeKit has no fan "preset")                   |
+| climate   | `TargetTemperature` / `CurrentTemperature`; `TargetHeatingCoolingState` 0=off 1=heat 2=cool 3=auto |
+
+Note: HomeKit light **brightness is 0-100** (HA used 0-255); the poll engine scales
+it so the existing UI math keeps working.
 
 ---
 
 ## Required ESPHome `http_request` settings (validated on hardware)
 
 Talking to the Homebridge UI API from an ESP32 needs several non-obvious settings.
-These were confirmed on a live CYD + Homebridge (2026-07-11) and are mandatory for
-the full port too — they're already baked into
-[homebridge/link-test.yaml](homebridge/link-test.yaml):
+Confirmed on a live CYD + Homebridge (2026-07-11); already baked into
+[hb_engine.yaml](homebridge/cyd-2432s028/hb_engine.yaml) and
+[link-test.yaml](homebridge/link-test.yaml):
 
-- **Accept any 2xx, not just 200.** `POST /api/auth/login` returns **201 Created**;
-  gate success on `status >= 200 && status < 300` or every login looks like a failure.
-- **Send `Content-Type: application/json` on the login POST.** ESPHome's `json:`
-  action does *not* set it, and Homebridge rejects the body with **415** without it.
-- **Enlarge both HTTP buffers on the `http_request:` component:**
-  - `buffer_size_tx: 4096` — every authenticated request carries an
-    `Authorization: Bearer <token>` header (~360 B; the token is ~340 chars) that
-    overflows the default 512 B transmit buffer ("Buffer length is small to fit all
-    the headers").
-  - `buffer_size_rx: 4096` — Homebridge's response headers total ~900 B.
-- **Raise `max_response_buffer_size` on each parsed GET** (e.g. `8192`). It is an
-  *action* option (next to `capture_response`) and defaults to **1 kB**, which
-  truncates the accessory JSON (~1.2 kB, more for color lights) → `IncompleteInput`.
-- **Header-value lambdas must return `const char*`,** not `std::string`. Keep the
-  bearer string in a persistent global and return `id(hb_auth_header).c_str()`.
-- `Accept-Encoding: identity` on GETs is a cheap guard against compressed replies
-  the device can't inflate.
+- **Accept any 2xx, not just 200.** `POST /api/auth/login` returns **201 Created**.
+- **Send `Content-Type: application/json` on the login POST** — ESPHome's `json:`
+  action doesn't, and Homebridge rejects the body with **415** without it.
+- **Enlarge both HTTP buffers on `http_request:`** — `buffer_size_tx: 4096` (the
+  `Authorization: Bearer <token>` header is ~360 B, over the default 512 B) and
+  `buffer_size_rx: 4096` (response headers total ~900 B).
+- **Raise `max_response_buffer_size` per parsed GET** (default is 1 kB, which
+  truncates the accessory JSON). It's an *action* option next to `capture_response`.
+  Note it allocates a scratch buffer **plus** the response string at once (~2× the
+  size), so on a no-PSRAM ESP32 keep it modest — the device list fetch is capped to
+  stay within contiguous RAM.
+- **Header-value lambdas must return `const char*`** (keep the bearer string in a
+  persistent global and return `.c_str()`), and `Accept-Encoding: identity` on GETs
+  guards against compressed replies the device can't inflate.
 
 ---
 
-## Home Assistant → HomeKit characteristic reference
+## What's in the repo
 
-When we port the tiles, HA `entity_id` + service calls become HomeKit
-`uniqueId` + characteristics. The mapping:
+- **[homebridge/cyd-2432s028/home-like.yaml](homebridge/cyd-2432s028/home-like.yaml)**
+  — the panel firmware (LVGL home-like UI). Flash this.
+- **[homebridge/cyd-2432s028/hb_engine.yaml](homebridge/cyd-2432s028/hb_engine.yaml)**
+  — the Homebridge engine (login, polling, commands, device-list fetch), included
+  as a package. Reads everything from the on-device config at runtime.
+- **[homebridge/cyd-2432s028/components/hb_config/](homebridge/cyd-2432s028/components/hb_config/)**
+  — the custom component that serves `/setup` + `/hbdevices` and stores the config
+  in flash.
+- **[homebridge/link-test.yaml](homebridge/link-test.yaml)** — the optional
+  link validator above.
 
-| Tile type | HA (old)                        | HomeKit characteristic(s) via this API                       |
-|-----------|---------------------------------|--------------------------------------------------------------|
-| light     | `light.toggle` / brightness 0-255 | `On` (bool); `Brightness` **0-100**                        |
-| light color | rgb / color_temp              | `Hue` 0-360 + `Saturation` 0-100; `ColorTemperature` (mireds)|
-| switch / outlet | `switch.toggle`           | `On` (bool)                                                  |
-| scene / script | `*.turn_on`                | usually a stateless `On` switch accessory                    |
-| cover     | `cover.set_cover_position` 0-100  | `TargetPosition` / `CurrentPosition` **0-100** (100 = open) |
-| fan       | on/off + percentage / preset      | `On` or `Active`; `RotationSpeed` 0-100 (no "preset" concept)|
-| climate   | `climate.set_temperature` / hvac  | `TargetTemperature` / `CurrentTemperature`; `TargetHeatingCoolingState` 0=off 1=heat 2=cool 3=auto |
+## Roadmap
 
-Two mapping gaps worth knowing up front: HomeKit fans have **no preset_mode**
-(the current `fan_toggle_preset` tap becomes a speed set), and light **brightness
-is 0-100** here versus HA's 0-255 (the poll engine will scale it so the existing
-UI math keeps working).
-
----
-
-## Roadmap (what's built vs. next)
-
-- [x] `secrets.yaml.example` — Homebridge credentials
-- [x] `HB_BASE_URL` substitution pattern (keeps your URL out of the repo)
-- [x] **link-test.yaml** — validates login + control + state read
-      (**confirmed on hardware 2026-07-11** — full read + write round-trip working)
-- [x] Full **home-like** tile UI on the CYD, driven by the Homebridge API —
-      [homebridge/cyd-2432s028/home-like.yaml](homebridge/cyd-2432s028/home-like.yaml)
-      + [hb_engine.yaml](homebridge/cyd-2432s028/hb_engine.yaml). **Working on hardware
-      2026-07-11**: landscape, live state, tap-to-toggle, Hue brightness/color, no dimming.
-      ⚠️ That board is **ST7789V** — set the display `model:` to match your panel
-      (most CYDs are ILI9341).
-- [ ] On-device web config page (URL/creds/room + device picker) — in progress
+- [x] `secrets.yaml.example` — Wi-Fi / OTA / API key (Homebridge creds go on `/setup`)
+- [x] **link-test.yaml** — validates login + control + state read (confirmed on hardware)
+- [x] Full **home-like** tile UI on the CYD, driven by the Homebridge API (landscape,
+      live state, tap-to-toggle, brightness/color)
+- [x] **On-device web config** — set URL/credentials/room + a device picker at
+      `/setup`, stored in flash, applied live. One firmware for any room/devices.
 - [ ] External ILI9341 + ESP32 variant
-
-Once link-test.yaml is confirmed on your setup, the full UI port is the next
-step — the same primitives, wired into the existing LVGL screen.
+- [ ] Streaming device-list fetch (list *all* accessories on very large installs)
 
 ---
 
