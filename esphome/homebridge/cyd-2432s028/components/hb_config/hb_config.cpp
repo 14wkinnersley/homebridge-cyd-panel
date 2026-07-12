@@ -2,6 +2,7 @@
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
 #include "esphome/components/json/json_util.h"
+#include "esp_heap_caps.h"
 
 namespace esphome {
 namespace hb_config {
@@ -24,17 +25,38 @@ input,select{width:100%;padding:10px;border-radius:8px;border:1px solid #2a3550;
 button{margin-top:18px;width:100%;padding:13px;border:0;border-radius:10px;background:#2563eb;color:#fff;font-size:15px;font-weight:600}
 #msg{margin-top:10px;text-align:center}.ok{color:#34d399}.chk{display:flex;align-items:center;gap:8px;margin-top:8px}
 .chk input{width:auto}
+button.ghost{background:#0f1730;border:1px solid #2a3550;color:#93a3b8;font-weight:500;margin-top:10px}
+.hint{font-size:12px;color:#93a3b8;margin:6px 0}
+select.pick{margin-bottom:2px}
 </style></head><body><div class="wrap">
 <h1>&#128241; Smart Panel Setup</h1>
 <label>Room name (shown top-left)</label><input id="room">
 <label>Homebridge URL</label><input id="url" placeholder="http://192.168.1.50:8581">
 <div class="row"><div><label>Username</label><input id="user"></div>
 <div><label>Password</label><input id="pass" type="password"></div></div>
-<h3>Tiles</h3><div id="tiles"></div>
+<h3>Tiles</h3>
+<button type="button" class="ghost" onclick="loadDevices()">&#128269; Load device list from Homebridge</button>
+<div id="dmsg" class="hint">Tip: enter your Homebridge URL + login and Save first, then load the list to pick devices by name.</div>
+<div id="tiles"></div>
 <button onclick="save()">Save</button><div id="msg"></div>
 </div><script>
 var TYPES=['light','switch','fan','cover','climate','scene','script'];
+var DEVICES=null;
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function loadDevices(n){n=n||0;$('dmsg').textContent='Loading devices from Homebridge...';
+ fetch('/hbdevices').then(function(r){return r.json()}).then(function(d){
+  if(d&&d.loading){if(n>12){$('dmsg').textContent='Timed out. Save your URL + login, then try again.';return;}
+   setTimeout(function(){loadDevices(n+1)},1500);return;}
+  DEVICES=d;fillPickers();$('dmsg').textContent=((d&&d.length)||0)+' devices loaded - pick one per tile.';})
+ .catch(function(){$('dmsg').textContent='Could not load devices (save your URL + login first).';});}
+function fillPickers(){if(!DEVICES)return;for(var i=0;i<6;i++){var sel=$('pick'+i);if(!sel)continue;
+  var cur=($('uid'+i).value||'');var h='<option value="">- pick a device -</option>';
+  DEVICES.forEach(function(dev){h+='<option value="'+esc(dev.u)+'"'+(dev.u===cur?' selected':'')+'>'+esc(dev.n||dev.u)+'</option>';});
+  sel.innerHTML=h;}}
+function onPick(i){var sel=$('pick'+i),uid=sel.value;if(!uid)return;$('uid'+i).value=uid;
+  var nm=sel.options[sel.selectedIndex].text;if(!$('title'+i).value)$('title'+i).value=nm;}
 function row(i,t){t=t||{};return '<div class="tile"><b>Tile '+(i+1)+'</b>'
++'<label>Device</label><select class="pick" id="pick'+i+'" onchange="onPick('+i+')"><option value="">- load list, then pick -</option></select>'
 +'<label>Accessory uniqueId</label><input id="uid'+i+'" value="'+(t.uid||'')+'">'
 +'<div class="row"><div><label>Title</label><input id="title'+i+'" value="'+(t.title||'')+'"></div>'
 +'<div><label>Type</label><select id="type'+i+'">'+TYPES.map(function(x){return '<option '+(t.type==x?'selected':'')+'>'+x+'</option>'}).join('')+'</select></div></div>'
@@ -42,7 +64,7 @@ function row(i,t){t=t||{};return '<div class="tile"><b>Tile '+(i+1)+'</b>'
 function $(id){return document.getElementById(id)}
 function load(){fetch('/hbcfg').then(function(r){return r.json()}).then(function(c){
 $('room').value=c.room||'';$('url').value=c.url||'';$('user').value=c.user||'';$('pass').value=c.pass||'';
-var h='';for(var i=0;i<6;i++)h+=row(i,(c.tiles||[])[i]);$('tiles').innerHTML=h;})}
+var h='';for(var i=0;i<6;i++)h+=row(i,(c.tiles||[])[i]);$('tiles').innerHTML=h;fillPickers();})}
 function save(){var t=[];for(var i=0;i<6;i++)t.push({uid:$('uid'+i).value,title:$('title'+i).value,type:$('type'+i).value,enabled:$('en'+i).checked});
 var s=JSON.stringify({room:$('room').value,url:$('url').value,user:$('user').value,pass:$('pass').value,tiles:t});
 var CH=200,parts=[];for(var i=0;i<s.length;i+=CH)parts.push(s.slice(i,i+CH));if(!parts.length)parts=[''];
@@ -78,12 +100,23 @@ void HbConfig::dump_config() {
 }
 
 bool HbConfig::canHandle(AsyncWebServerRequest *request) const {
-  return request->url() == "/setup" || request->url() == "/hbcfg";
+  return request->url() == "/setup" || request->url() == "/hbcfg" ||
+         request->url() == "/hbdevices";
 }
 
 void HbConfig::handleRequest(AsyncWebServerRequest *request) {
   if (request->url() == "/setup") {
     request->send(200, "text/html", SETUP_HTML);
+    return;
+  }
+  if (request->url() == "/hbdevices") {
+    // Return the cached compact device list, or ask the engine to fetch it.
+    if (this->devices_ready_) {
+      request->send(200, "application/json", this->devices_json_.c_str());
+    } else {
+      this->want_devices_ = true;
+      request->send(200, "application/json", "{\"loading\":true}");
+    }
     return;
   }
   // /hbcfg  (web_server_idf exposes the POST body as form args)
@@ -155,6 +188,78 @@ void HbConfig::parse_() {
     return true;
   });
   this->gen_++;  // signal YAML to re-apply room/titles/visibility
+}
+
+void HbConfig::begin_fetch() {
+  this->fetching_ = true;
+  this->fetch_ticks_ = 0;
+  ESP_LOGI(TAG, "Fetching device list (free heap %u, largest block %u)",
+           (unsigned) heap_caps_get_free_size(MALLOC_CAP_8BIT),
+           (unsigned) heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+}
+
+void HbConfig::tick_fetch_watchdog() {
+  // Called ~1 Hz from the engine. If a fetch never came back (error/timeout,
+  // which doesn't run on_response), clear the guard after ~10 s so it can retry.
+  if (this->fetching_ && ++this->fetch_ticks_ > 10) {
+    ESP_LOGW(TAG, "Device fetch timed out; will retry");
+    this->fetching_ = false;
+    this->fetch_ticks_ = 0;
+  }
+}
+
+void HbConfig::set_devices_json(const std::string &raw) {
+  // The Homebridge layout is [{"name":room,"services":[{"uniqueId","name",...}]}].
+  // Scan it into a compact [{"u":uid,"n":name}] list without a full DOM parse — the
+  // raw payload is tens of KB and an ArduinoJson document would be memory-heavy.
+  // ("nameBasedUniqueId" never contains the exact "uniqueId":" key, and the service
+  // name is always the first "name":" after each uniqueId, so a linear scan is safe.)
+  static const std::string KUID = "\"uniqueId\":\"";
+  static const std::string KNAME = "\"name\":\"";
+  std::string out = "[";
+  bool first = true;
+  size_t pos = 0;
+  while ((pos = raw.find(KUID, pos)) != std::string::npos) {
+    pos += KUID.size();
+    size_t uend = raw.find('"', pos);
+    if (uend == std::string::npos)
+      break;
+    std::string uid = raw.substr(pos, uend - pos);
+    pos = uend + 1;
+    std::string name;
+    size_t np = raw.find(KNAME, pos);
+    if (np != std::string::npos) {
+      np += KNAME.size();
+      size_t nend = np;
+      while (true) {
+        nend = raw.find('"', nend);
+        if (nend == std::string::npos)
+          break;
+        if (raw[nend - 1] != '\\')  // unescaped quote = end of the name
+          break;
+        nend++;                     // escaped quote, keep scanning
+      }
+      if (nend != std::string::npos)
+        name = raw.substr(np, nend - np);  // keep any JSON escaping as-is
+    }
+    if (uid.empty())
+      continue;
+    if (!first)
+      out += ",";
+    first = false;
+    out += "{\"u\":\"";
+    out += uid;
+    out += "\",\"n\":\"";
+    out += name;
+    out += "\"}";
+  }
+  out += "]";
+  this->devices_json_ = out;
+  this->devices_ready_ = true;
+  this->fetching_ = false;
+  this->want_devices_ = false;
+  ESP_LOGI(TAG, "Device list ready (%d bytes, free heap %u)", (int) out.size(),
+           (unsigned) heap_caps_get_free_size(MALLOC_CAP_8BIT));
 }
 
 }  // namespace hb_config

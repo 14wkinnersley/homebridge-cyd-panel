@@ -289,6 +289,36 @@ script:
       - delay: 250ms
       - script.execute: hb_poll_all
 
+  # ---- Fetch the Homebridge accessory list for the /setup device picker ----
+  # Uses the lightweight /api/accessories/layout endpoint (~40 KB) rather than the
+  # full /api/accessories (can be hundreds of KB); hb_config compacts it to
+  # [{u,n}] and serves it at /hbdevices.
+  - id: hb_fetch_devices
+    mode: restart
+    then:
+      - http_request.get:
+          url: !lambda 'return id(hb_cfg).url() + "/api/accessories/layout";'
+          capture_response: true
+          # ESPHome allocates this scratch buffer AND a separate response string of
+          # the actual size at the same time (~2x). On this no-PSRAM ESP32 the
+          # contiguous heap can't hold 2x the full ~38 KB layout, so cap it: the
+          # response is truncated and set_devices_json parses the complete entries
+          # it received (a large Homebridge install may show a partial list; manual
+          # uniqueId entry always covers the rest).
+          max_response_buffer_size: 32768
+          request_headers:
+            Authorization: !lambda "return id(hb_auth_header).c_str();"
+            Accept-Encoding: identity
+          on_response:
+            then:
+              - lambda: |-
+                  if (response->status_code == 200) {
+                    id(hb_cfg).set_devices_json(body);
+                  } else {
+                    if (response->status_code == 401) id(hb_have_token) = false;
+                    id(hb_cfg).fetch_failed();
+                  }
+
 interval:
   - interval: 4s
     then:
@@ -296,3 +326,22 @@ interval:
   - interval: 6h
     then:
       - script.execute: hb_login
+  # The setup page requested the device list: fetch it once we have a token,
+  # otherwise trigger a login and retry on the next tick. should_fetch() ensures
+  # only ONE fetch runs at a time so repeated page polls can't stack up large
+  # allocations and exhaust the heap.
+  - interval: 1s
+    then:
+      - lambda: 'id(hb_cfg).tick_fetch_watchdog();'
+      - if:
+          condition:
+            lambda: 'return id(hb_cfg).should_fetch();'
+          then:
+            - if:
+                condition:
+                  lambda: 'return id(hb_have_token);'
+                then:
+                  - lambda: 'id(hb_cfg).begin_fetch();'
+                  - script.execute: hb_fetch_devices
+                else:
+                  - script.execute: hb_login

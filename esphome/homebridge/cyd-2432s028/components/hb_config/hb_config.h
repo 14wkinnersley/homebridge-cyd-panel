@@ -39,6 +39,20 @@ class HbConfig : public Component, public AsyncWebHandler {
   // Bumped on every (re)parse so YAML can detect config changes and re-apply live.
   uint32_t generation() { return this->gen_; }
 
+  // ---- device picker (/hbdevices) ----
+  // The setup page GET /hbdevices sets want_devices_ (via handleRequest). The
+  // engine polls should_fetch(); exactly one fetch runs at a time (fetching_
+  // guard) so overlapping large allocations can't exhaust the heap. A watchdog
+  // clears a stuck fetch so a failed attempt can retry.
+  bool should_fetch() const {
+    return this->want_devices_ && !this->fetching_ && !this->devices_ready_;
+  }
+  void begin_fetch();
+  void tick_fetch_watchdog();  // call ~1 Hz; clears a fetch that never returned
+  // Compact the big Homebridge layout JSON down to [{"u":uid,"n":name}] and cache it.
+  void set_devices_json(const std::string &layout_raw);
+  void fetch_failed() { this->fetching_ = false; }
+
  protected:
   static constexpr size_t CFG_MAX = 2048;
   static bool valid_(int i) { return i >= 1 && i <= 6; }
@@ -54,6 +68,11 @@ class HbConfig : public Component, public AsyncWebHandler {
   std::string room_, url_, user_, pass_;
   TileCfg tiles_[6];
   uint32_t gen_{0};
+  std::string devices_json_;   // compact [{"u":uid,"n":name}] served at /hbdevices
+  bool want_devices_{false};
+  bool devices_ready_{false};
+  bool fetching_{false};
+  uint8_t fetch_ticks_{0};
 };
 
 }  // namespace hb_config
