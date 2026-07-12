@@ -542,23 +542,22 @@ esphome:
   name: smartdisplay
   friendly_name: SmartDisplay
   on_boot:
-    priority: 600
-    then:
-      - lambda: |-
-          id(last_touch_ms) = millis();
-          id(display_dimmed) = false;
-      - light.turn_on:
-          id: back_light
-          brightness: !lambda "return atoi(\"${MAX_BRIGHTNESS}\") / 100.0f;"
-      - lambda: |-
-          if (std::string("${TILE1_ENABLED}") != "true") lv_obj_add_flag(id(tile1), LV_OBJ_FLAG_HIDDEN);
-          if (std::string("${TILE2_ENABLED}") != "true") lv_obj_add_flag(id(tile2), LV_OBJ_FLAG_HIDDEN);
-          if (std::string("${TILE3_ENABLED}") != "true") lv_obj_add_flag(id(tile3), LV_OBJ_FLAG_HIDDEN);
-          if (std::string("${TILE4_ENABLED}") != "true") lv_obj_add_flag(id(tile4), LV_OBJ_FLAG_HIDDEN);
-          if (std::string("${TILE5_ENABLED}") != "true") lv_obj_add_flag(id(tile5), LV_OBJ_FLAG_HIDDEN);
-          if (std::string("${TILE6_ENABLED}") != "true") lv_obj_add_flag(id(tile6), LV_OBJ_FLAG_HIDDEN);
-      - script.execute: ui_refresh
-      - script.execute: hb_login
+    - priority: 600
+      then:
+        - lambda: |-
+            id(last_touch_ms) = millis();
+            id(display_dimmed) = false;
+        - light.turn_on:
+            id: back_light
+            brightness: !lambda "return atoi(\"${MAX_BRIGHTNESS}\") / 100.0f;"
+        - script.execute: ui_refresh
+        - script.execute: hb_login
+    # Runs after hb_config's setup() (setup_priority LATE = -100), so the stored
+    # config is parsed before we apply the room name / tile titles / visibility.
+    - priority: -200
+      then:
+        - script.execute: apply_config_ui
+        - lambda: 'id(last_cfg_gen) = id(hb_cfg).generation();'
 
 esp32:
   board: esp32dev
@@ -596,6 +595,20 @@ interval:
               return (millis() - id(last_touch_ms)) > (atoi("${AUTO_DIM_TIMEOUT}") * 1000UL);
           then:
             - script.execute: dim_display
+
+  # Detect a saved config change (via /setup) and apply it live: refresh room
+  # name / tile titles / visibility, then re-authenticate in case the URL or
+  # credentials changed. The 4s poll picks up any new device list on its own.
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lambda: 'return id(hb_cfg).generation() != id(last_cfg_gen);'
+          then:
+            - lambda: 'id(last_cfg_gen) = id(hb_cfg).generation();'
+            - script.execute: apply_config_ui
+            - script.execute: hb_login
+            - script.execute: ui_refresh
 
 time:
   - platform: sntp
@@ -651,6 +664,13 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+
+  # Last-applied hb_config generation; the 1s interval re-applies room/titles/
+  # visibility (and re-logs-in) when id(hb_cfg).generation() moves past this.
+  - id: last_cfg_gen
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
 
   - id: active_label_off
     type: std::string
@@ -1363,14 +1383,14 @@ lvgl:
               - script.execute: { id: publish_action, action: "tile1_press" }
               - script.execute:
                   id: do_tile_action
-                  tile_type: "${TILE1_TYPE}"
+                  tile_type: !lambda 'return id(hb_cfg).tile_type(1);'
                   tap_action: "${TILE1_TAP_ACTION}"
                   service: "${TILE1_TAP_SERVICE}"
-                  entity_id: "${TILE1_ENTITY}"
+                  entity_id: !lambda 'return id(hb_cfg).tile_uid(1);'
                   param_key: "${TILE1_TAP_PARAM_KEY}"
                   param_val: "${TILE1_TAP_PARAM_VAL}"
                   was_on: !lambda |-
-                    if (std::string("${TILE1_TYPE}") == "cover")
+                    if (std::string(id(hb_cfg).tile_type(1)) == "cover")
                       return id(tile1_cover_state).state != "closed";
                     return std::string(id(ha_state_tile1).state.c_str()) == "on";
             on_long_press:
@@ -1383,7 +1403,7 @@ lvgl:
                         id: do_tile_action
                         tile_type: !lambda |-
                           std::string t = "${TILE1_LONGPRESS_ACTION_TYPE}";
-                          return t.empty() ? std::string("${TILE1_TYPE}") : t;
+                          return t.empty() ? std::string(id(hb_cfg).tile_type(1)) : t;
                         tap_action: "activate"
                         service: "${TILE1_LONGPRESS_ACTION_SERVICE}"
                         entity_id: "${TILE1_LONGPRESS_ACTION}"
@@ -1397,12 +1417,12 @@ lvgl:
                         then:
                           - script.execute:
                               id: open_value_overlay
-                              title: "${TILE1_TITLE}"
-                              entity: "${TILE1_ENTITY}"
-                              tile_type: "${TILE1_TYPE}"
+                              title: !lambda 'auto s = id(hb_cfg).tile_title(1); return s.empty() ? std::string("${TILE1_TITLE}") : s;'
+                              entity: !lambda 'return id(hb_cfg).tile_uid(1);'
+                              tile_type: !lambda 'return id(hb_cfg).tile_type(1);'
                               longpress_mode: "${TILE1_LONGPRESS_SLIDER}"
                               was_on: !lambda |-
-                                if (std::string("${TILE1_TYPE}") == "cover")
+                                if (std::string(id(hb_cfg).tile_type(1)) == "cover")
                                   return id(tile1_cover_state).state != "closed";
                                 return std::string(id(ha_state_tile1).state.c_str()) == "on";
                               off_value: !lambda "return atoi(\"${TILE1_LONGPRESS_OFF_VALUE}\");"
@@ -1472,14 +1492,14 @@ lvgl:
               - script.execute: { id: publish_action, action: "tile2_press" }
               - script.execute:
                   id: do_tile_action
-                  tile_type: "${TILE2_TYPE}"
+                  tile_type: !lambda 'return id(hb_cfg).tile_type(2);'
                   tap_action: "${TILE2_TAP_ACTION}"
                   service: "${TILE2_TAP_SERVICE}"
-                  entity_id: "${TILE2_ENTITY}"
+                  entity_id: !lambda 'return id(hb_cfg).tile_uid(2);'
                   param_key: "${TILE2_TAP_PARAM_KEY}"
                   param_val: "${TILE2_TAP_PARAM_VAL}"
                   was_on: !lambda |-
-                    if (std::string("${TILE2_TYPE}") == "cover")
+                    if (std::string(id(hb_cfg).tile_type(2)) == "cover")
                       return id(tile2_cover_state).state != "closed";
                     return std::string(id(ha_state_tile2).state.c_str()) == "on";
             on_long_press:
@@ -1492,7 +1512,7 @@ lvgl:
                         id: do_tile_action
                         tile_type: !lambda |-
                           std::string t = "${TILE2_LONGPRESS_ACTION_TYPE}";
-                          return t.empty() ? std::string("${TILE2_TYPE}") : t;
+                          return t.empty() ? std::string(id(hb_cfg).tile_type(2)) : t;
                         tap_action: "activate"
                         service: "${TILE2_LONGPRESS_ACTION_SERVICE}"
                         entity_id: "${TILE2_LONGPRESS_ACTION}"
@@ -1506,12 +1526,12 @@ lvgl:
                         then:
                           - script.execute:
                               id: open_value_overlay
-                              title: "${TILE2_TITLE}"
-                              entity: "${TILE2_ENTITY}"
-                              tile_type: "${TILE2_TYPE}"
+                              title: !lambda 'auto s = id(hb_cfg).tile_title(2); return s.empty() ? std::string("${TILE2_TITLE}") : s;'
+                              entity: !lambda 'return id(hb_cfg).tile_uid(2);'
+                              tile_type: !lambda 'return id(hb_cfg).tile_type(2);'
                               longpress_mode: "${TILE2_LONGPRESS_SLIDER}"
                               was_on: !lambda |-
-                                if (std::string("${TILE2_TYPE}") == "cover")
+                                if (std::string(id(hb_cfg).tile_type(2)) == "cover")
                                   return id(tile2_cover_state).state != "closed";
                                 return std::string(id(ha_state_tile2).state.c_str()) == "on";
                               off_value: !lambda "return atoi(\"${TILE2_LONGPRESS_OFF_VALUE}\");"
@@ -1581,14 +1601,14 @@ lvgl:
               - script.execute: { id: publish_action, action: "tile3_press" }
               - script.execute:
                   id: do_tile_action
-                  tile_type: "${TILE3_TYPE}"
+                  tile_type: !lambda 'return id(hb_cfg).tile_type(3);'
                   tap_action: "${TILE3_TAP_ACTION}"
                   service: "${TILE3_TAP_SERVICE}"
-                  entity_id: "${TILE3_ENTITY}"
+                  entity_id: !lambda 'return id(hb_cfg).tile_uid(3);'
                   param_key: "${TILE3_TAP_PARAM_KEY}"
                   param_val: "${TILE3_TAP_PARAM_VAL}"
                   was_on: !lambda |-
-                    if (std::string("${TILE3_TYPE}") == "cover")
+                    if (std::string(id(hb_cfg).tile_type(3)) == "cover")
                       return id(tile3_cover_state).state != "closed";
                     return std::string(id(ha_state_tile3).state.c_str()) == "on";
             on_long_press:
@@ -1601,7 +1621,7 @@ lvgl:
                         id: do_tile_action
                         tile_type: !lambda |-
                           std::string t = "${TILE3_LONGPRESS_ACTION_TYPE}";
-                          return t.empty() ? std::string("${TILE3_TYPE}") : t;
+                          return t.empty() ? std::string(id(hb_cfg).tile_type(3)) : t;
                         tap_action: "activate"
                         service: "${TILE3_LONGPRESS_ACTION_SERVICE}"
                         entity_id: "${TILE3_LONGPRESS_ACTION}"
@@ -1615,12 +1635,12 @@ lvgl:
                         then:
                           - script.execute:
                               id: open_value_overlay
-                              title: "${TILE3_TITLE}"
-                              entity: "${TILE3_ENTITY}"
-                              tile_type: "${TILE3_TYPE}"
+                              title: !lambda 'auto s = id(hb_cfg).tile_title(3); return s.empty() ? std::string("${TILE3_TITLE}") : s;'
+                              entity: !lambda 'return id(hb_cfg).tile_uid(3);'
+                              tile_type: !lambda 'return id(hb_cfg).tile_type(3);'
                               longpress_mode: "${TILE3_LONGPRESS_SLIDER}"
                               was_on: !lambda |-
-                                if (std::string("${TILE3_TYPE}") == "cover")
+                                if (std::string(id(hb_cfg).tile_type(3)) == "cover")
                                   return id(tile3_cover_state).state != "closed";
                                 return std::string(id(ha_state_tile3).state.c_str()) == "on";
                               off_value: !lambda "return atoi(\"${TILE3_LONGPRESS_OFF_VALUE}\");"
@@ -1690,14 +1710,14 @@ lvgl:
               - script.execute: { id: publish_action, action: "tile4_press" }
               - script.execute:
                   id: do_tile_action
-                  tile_type: "${TILE4_TYPE}"
+                  tile_type: !lambda 'return id(hb_cfg).tile_type(4);'
                   tap_action: "${TILE4_TAP_ACTION}"
                   service: "${TILE4_TAP_SERVICE}"
-                  entity_id: "${TILE4_ENTITY}"
+                  entity_id: !lambda 'return id(hb_cfg).tile_uid(4);'
                   param_key: "${TILE4_TAP_PARAM_KEY}"
                   param_val: "${TILE4_TAP_PARAM_VAL}"
                   was_on: !lambda |-
-                    if (std::string("${TILE4_TYPE}") == "cover")
+                    if (std::string(id(hb_cfg).tile_type(4)) == "cover")
                       return id(tile4_cover_state).state != "closed";
                     return std::string(id(ha_state_tile4).state.c_str()) == "on";
             on_long_press:
@@ -1710,7 +1730,7 @@ lvgl:
                         id: do_tile_action
                         tile_type: !lambda |-
                           std::string t = "${TILE4_LONGPRESS_ACTION_TYPE}";
-                          return t.empty() ? std::string("${TILE4_TYPE}") : t;
+                          return t.empty() ? std::string(id(hb_cfg).tile_type(4)) : t;
                         tap_action: "activate"
                         service: "${TILE4_LONGPRESS_ACTION_SERVICE}"
                         entity_id: "${TILE4_LONGPRESS_ACTION}"
@@ -1724,12 +1744,12 @@ lvgl:
                         then:
                           - script.execute:
                               id: open_value_overlay
-                              title: "${TILE4_TITLE}"
-                              entity: "${TILE4_ENTITY}"
-                              tile_type: "${TILE4_TYPE}"
+                              title: !lambda 'auto s = id(hb_cfg).tile_title(4); return s.empty() ? std::string("${TILE4_TITLE}") : s;'
+                              entity: !lambda 'return id(hb_cfg).tile_uid(4);'
+                              tile_type: !lambda 'return id(hb_cfg).tile_type(4);'
                               longpress_mode: "${TILE4_LONGPRESS_SLIDER}"
                               was_on: !lambda |-
-                                if (std::string("${TILE4_TYPE}") == "cover")
+                                if (std::string(id(hb_cfg).tile_type(4)) == "cover")
                                   return id(tile4_cover_state).state != "closed";
                                 return std::string(id(ha_state_tile4).state.c_str()) == "on";
                               off_value: !lambda "return atoi(\"${TILE4_LONGPRESS_OFF_VALUE}\");"
@@ -1799,14 +1819,14 @@ lvgl:
               - script.execute: { id: publish_action, action: "tile5_press" }
               - script.execute:
                   id: do_tile_action
-                  tile_type: "${TILE5_TYPE}"
+                  tile_type: !lambda 'return id(hb_cfg).tile_type(5);'
                   tap_action: "${TILE5_TAP_ACTION}"
                   service: "${TILE5_TAP_SERVICE}"
-                  entity_id: "${TILE5_ENTITY}"
+                  entity_id: !lambda 'return id(hb_cfg).tile_uid(5);'
                   param_key: "${TILE5_TAP_PARAM_KEY}"
                   param_val: "${TILE5_TAP_PARAM_VAL}"
                   was_on: !lambda |-
-                    if (std::string("${TILE5_TYPE}") == "cover")
+                    if (std::string(id(hb_cfg).tile_type(5)) == "cover")
                       return id(tile5_cover_state).state != "closed";
                     return std::string(id(ha_state_tile5).state.c_str()) == "on";
             on_long_press:
@@ -1819,7 +1839,7 @@ lvgl:
                         id: do_tile_action
                         tile_type: !lambda |-
                           std::string t = "${TILE5_LONGPRESS_ACTION_TYPE}";
-                          return t.empty() ? std::string("${TILE5_TYPE}") : t;
+                          return t.empty() ? std::string(id(hb_cfg).tile_type(5)) : t;
                         tap_action: "activate"
                         service: "${TILE5_LONGPRESS_ACTION_SERVICE}"
                         entity_id: "${TILE5_LONGPRESS_ACTION}"
@@ -1833,12 +1853,12 @@ lvgl:
                         then:
                           - script.execute:
                               id: open_value_overlay
-                              title: "${TILE5_TITLE}"
-                              entity: "${TILE5_ENTITY}"
-                              tile_type: "${TILE5_TYPE}"
+                              title: !lambda 'auto s = id(hb_cfg).tile_title(5); return s.empty() ? std::string("${TILE5_TITLE}") : s;'
+                              entity: !lambda 'return id(hb_cfg).tile_uid(5);'
+                              tile_type: !lambda 'return id(hb_cfg).tile_type(5);'
                               longpress_mode: "${TILE5_LONGPRESS_SLIDER}"
                               was_on: !lambda |-
-                                if (std::string("${TILE5_TYPE}") == "cover")
+                                if (std::string(id(hb_cfg).tile_type(5)) == "cover")
                                   return id(tile5_cover_state).state != "closed";
                                 return std::string(id(ha_state_tile5).state.c_str()) == "on";
                               off_value: !lambda "return atoi(\"${TILE5_LONGPRESS_OFF_VALUE}\");"
@@ -1908,14 +1928,14 @@ lvgl:
               - script.execute: { id: publish_action, action: "tile6_press" }
               - script.execute:
                   id: do_tile_action
-                  tile_type: "${TILE6_TYPE}"
+                  tile_type: !lambda 'return id(hb_cfg).tile_type(6);'
                   tap_action: "${TILE6_TAP_ACTION}"
                   service: "${TILE6_TAP_SERVICE}"
-                  entity_id: "${TILE6_ENTITY}"
+                  entity_id: !lambda 'return id(hb_cfg).tile_uid(6);'
                   param_key: "${TILE6_TAP_PARAM_KEY}"
                   param_val: "${TILE6_TAP_PARAM_VAL}"
                   was_on: !lambda |-
-                    if (std::string("${TILE6_TYPE}") == "cover")
+                    if (std::string(id(hb_cfg).tile_type(6)) == "cover")
                       return id(tile6_cover_state).state != "closed";
                     return std::string(id(ha_state_tile6).state.c_str()) == "on";
             on_long_press:
@@ -1928,7 +1948,7 @@ lvgl:
                         id: do_tile_action
                         tile_type: !lambda |-
                           std::string t = "${TILE6_LONGPRESS_ACTION_TYPE}";
-                          return t.empty() ? std::string("${TILE6_TYPE}") : t;
+                          return t.empty() ? std::string(id(hb_cfg).tile_type(6)) : t;
                         tap_action: "activate"
                         service: "${TILE6_LONGPRESS_ACTION_SERVICE}"
                         entity_id: "${TILE6_LONGPRESS_ACTION}"
@@ -1942,12 +1962,12 @@ lvgl:
                         then:
                           - script.execute:
                               id: open_value_overlay
-                              title: "${TILE6_TITLE}"
-                              entity: "${TILE6_ENTITY}"
-                              tile_type: "${TILE6_TYPE}"
+                              title: !lambda 'auto s = id(hb_cfg).tile_title(6); return s.empty() ? std::string("${TILE6_TITLE}") : s;'
+                              entity: !lambda 'return id(hb_cfg).tile_uid(6);'
+                              tile_type: !lambda 'return id(hb_cfg).tile_type(6);'
                               longpress_mode: "${TILE6_LONGPRESS_SLIDER}"
                               was_on: !lambda |-
-                                if (std::string("${TILE6_TYPE}") == "cover")
+                                if (std::string(id(hb_cfg).tile_type(6)) == "cover")
                                   return id(tile6_cover_state).state != "closed";
                                 return std::string(id(ha_state_tile6).state.c_str()) == "on";
                               off_value: !lambda "return atoi(\"${TILE6_LONGPRESS_OFF_VALUE}\");"
@@ -3671,6 +3691,34 @@ script:
             - lvgl.widget.show: brightness_overlay
 
   # UI refresh (values + time + styles) + render
+  # Apply the runtime config (room name, per-tile title + visibility) from
+  # id(hb_cfg). Falls back to the compile-time substitutions when a value is
+  # empty / the device has not been configured via /setup yet. Runs late at
+  # boot and whenever the config generation changes (see the 1s interval).
+  - id: apply_config_ui
+    mode: queued
+    then:
+      - lambda: |-
+          {
+            std::string r = id(hb_cfg).room();
+            lv_label_set_text(id(lbl_room), r.empty() ? "${ROOM_NAME}" : r.c_str());
+          }
+          bool cfg = id(hb_cfg).configured();
+          auto apply_tile = [&](int n, lv_obj_t* tile, lv_obj_t* title,
+                                const char* def_title, bool def_enabled) {
+            std::string t = id(hb_cfg).tile_title(n);
+            lv_label_set_text(title, t.empty() ? def_title : t.c_str());
+            bool show = cfg ? id(hb_cfg).tile_enabled(n) : def_enabled;
+            if (show) lv_obj_clear_flag(tile, LV_OBJ_FLAG_HIDDEN);
+            else      lv_obj_add_flag(tile, LV_OBJ_FLAG_HIDDEN);
+          };
+          apply_tile(1, id(tile1), id(t1_title), "${TILE1_TITLE}", std::string("${TILE1_ENABLED}") == "true");
+          apply_tile(2, id(tile2), id(t2_title), "${TILE2_TITLE}", std::string("${TILE2_ENABLED}") == "true");
+          apply_tile(3, id(tile3), id(t3_title), "${TILE3_TITLE}", std::string("${TILE3_ENABLED}") == "true");
+          apply_tile(4, id(tile4), id(t4_title), "${TILE4_TITLE}", std::string("${TILE4_ENABLED}") == "true");
+          apply_tile(5, id(tile5), id(t5_title), "${TILE5_TITLE}", std::string("${TILE5_ENABLED}") == "true");
+          apply_tile(6, id(tile6), id(t6_title), "${TILE6_TITLE}", std::string("${TILE6_ENABLED}") == "true");
+
   - id: ui_refresh
     mode: queued
     then:
@@ -3785,39 +3833,39 @@ script:
           };
 
           // Cover-aware active state: "closed" = off, anything else (open/opening/closing) = on
-          bool t1_on = (std::string("${TILE1_TYPE}") == "cover") ? (id(tile1_cover_state).state != "closed") : is_active("${TILE1_TYPE}", std::string(id(ha_state_tile1).state.c_str()));
-          bool t2_on = (std::string("${TILE2_TYPE}") == "cover") ? (id(tile2_cover_state).state != "closed") : is_active("${TILE2_TYPE}", std::string(id(ha_state_tile2).state.c_str()));
-          bool t3_on = (std::string("${TILE3_TYPE}") == "cover") ? (id(tile3_cover_state).state != "closed") : is_active("${TILE3_TYPE}", std::string(id(ha_state_tile3).state.c_str()));
-          bool t4_on = (std::string("${TILE4_TYPE}") == "cover") ? (id(tile4_cover_state).state != "closed") : is_active("${TILE4_TYPE}", std::string(id(ha_state_tile4).state.c_str()));
-          bool t5_on = (std::string("${TILE5_TYPE}") == "cover") ? (id(tile5_cover_state).state != "closed") : is_active("${TILE5_TYPE}", std::string(id(ha_state_tile5).state.c_str()));
-          bool t6_on = (std::string("${TILE6_TYPE}") == "cover") ? (id(tile6_cover_state).state != "closed") : is_active("${TILE6_TYPE}", std::string(id(ha_state_tile6).state.c_str()));
+          bool t1_on = (std::string(id(hb_cfg).tile_type(1)) == "cover") ? (id(tile1_cover_state).state != "closed") : is_active(id(hb_cfg).tile_type(1), std::string(id(ha_state_tile1).state.c_str()));
+          bool t2_on = (std::string(id(hb_cfg).tile_type(2)) == "cover") ? (id(tile2_cover_state).state != "closed") : is_active(id(hb_cfg).tile_type(2), std::string(id(ha_state_tile2).state.c_str()));
+          bool t3_on = (std::string(id(hb_cfg).tile_type(3)) == "cover") ? (id(tile3_cover_state).state != "closed") : is_active(id(hb_cfg).tile_type(3), std::string(id(ha_state_tile3).state.c_str()));
+          bool t4_on = (std::string(id(hb_cfg).tile_type(4)) == "cover") ? (id(tile4_cover_state).state != "closed") : is_active(id(hb_cfg).tile_type(4), std::string(id(ha_state_tile4).state.c_str()));
+          bool t5_on = (std::string(id(hb_cfg).tile_type(5)) == "cover") ? (id(tile5_cover_state).state != "closed") : is_active(id(hb_cfg).tile_type(5), std::string(id(ha_state_tile5).state.c_str()));
+          bool t6_on = (std::string(id(hb_cfg).tile_type(6)) == "cover") ? (id(tile6_cover_state).state != "closed") : is_active(id(hb_cfg).tile_type(6), std::string(id(ha_state_tile6).state.c_str()));
 
-          set_value_auto(id(t1_value), t1_on, "${TILE1_TYPE}", "${TILE1_VALUE_MODE}",
+          set_value_auto(id(t1_value), t1_on, id(hb_cfg).tile_type(1), "${TILE1_VALUE_MODE}",
                          id(tile1_brightness).state, id(tile1_percentage).state, std::string(id(tile1_preset).state.c_str()),
                          id(tile1_climate_current_temperature).state, id(tile1_climate_target_temperature).state, id(tile1_climate_humidity).state,
                          "${TILE1_LABEL_ON}", "${TILE1_LABEL_OFF}");
 
-          set_value_auto(id(t2_value), t2_on, "${TILE2_TYPE}", "${TILE2_VALUE_MODE}",
+          set_value_auto(id(t2_value), t2_on, id(hb_cfg).tile_type(2), "${TILE2_VALUE_MODE}",
                          id(tile2_brightness).state, id(tile2_percentage).state, std::string(id(tile2_preset).state.c_str()),
                          id(tile2_climate_current_temperature).state, id(tile2_climate_target_temperature).state, id(tile2_climate_humidity).state,
                          "${TILE2_LABEL_ON}", "${TILE2_LABEL_OFF}");
 
-          set_value_auto(id(t3_value), t3_on, "${TILE3_TYPE}", "${TILE3_VALUE_MODE}",
+          set_value_auto(id(t3_value), t3_on, id(hb_cfg).tile_type(3), "${TILE3_VALUE_MODE}",
                          id(tile3_brightness).state, id(tile3_percentage).state, std::string(id(tile3_preset).state.c_str()),
                          id(tile3_climate_current_temperature).state, id(tile3_climate_target_temperature).state, id(tile3_climate_humidity).state,
                          "${TILE3_LABEL_ON}", "${TILE3_LABEL_OFF}");
 
-          set_value_auto(id(t4_value), t4_on, "${TILE4_TYPE}", "${TILE4_VALUE_MODE}",
+          set_value_auto(id(t4_value), t4_on, id(hb_cfg).tile_type(4), "${TILE4_VALUE_MODE}",
                          id(tile4_brightness).state, id(tile4_percentage).state, std::string(id(tile4_preset).state.c_str()),
                          id(tile4_climate_current_temperature).state, id(tile4_climate_target_temperature).state, id(tile4_climate_humidity).state,
                          "${TILE4_LABEL_ON}", "${TILE4_LABEL_OFF}");
 
-          set_value_auto(id(t5_value), t5_on, "${TILE5_TYPE}", "${TILE5_VALUE_MODE}",
+          set_value_auto(id(t5_value), t5_on, id(hb_cfg).tile_type(5), "${TILE5_VALUE_MODE}",
                          id(tile5_brightness).state, id(tile5_percentage).state, std::string(id(tile5_preset).state.c_str()),
                          id(tile5_climate_current_temperature).state, id(tile5_climate_target_temperature).state, id(tile5_climate_humidity).state,
                          "${TILE5_LABEL_ON}", "${TILE5_LABEL_OFF}");
 
-          set_value_auto(id(t6_value), t6_on, "${TILE6_TYPE}", "${TILE6_VALUE_MODE}",
+          set_value_auto(id(t6_value), t6_on, id(hb_cfg).tile_type(6), "${TILE6_VALUE_MODE}",
                          id(tile6_brightness).state, id(tile6_percentage).state, std::string(id(tile6_preset).state.c_str()),
                          id(tile6_climate_current_temperature).state, id(tile6_climate_target_temperature).state, id(tile6_climate_humidity).state,
                          "${TILE6_LABEL_ON}", "${TILE6_LABEL_OFF}");
@@ -3880,12 +3928,12 @@ script:
               lv_arc_set_value(id(climate_arc), id(active_climate_target_x10));
             };
 
-            if (std::string("${TILE1_TYPE}") == "climate") sync_open_climate("${TILE1_ENTITY}", id(tile1_climate_current_temperature).state, id(tile1_climate_target_temperature).state, id(tile1_climate_humidity).state, std::string(id(tile1_climate_mode).state.c_str()));
-            if (std::string("${TILE2_TYPE}") == "climate") sync_open_climate("${TILE2_ENTITY}", id(tile2_climate_current_temperature).state, id(tile2_climate_target_temperature).state, id(tile2_climate_humidity).state, std::string(id(tile2_climate_mode).state.c_str()));
-            if (std::string("${TILE3_TYPE}") == "climate") sync_open_climate("${TILE3_ENTITY}", id(tile3_climate_current_temperature).state, id(tile3_climate_target_temperature).state, id(tile3_climate_humidity).state, std::string(id(tile3_climate_mode).state.c_str()));
-            if (std::string("${TILE4_TYPE}") == "climate") sync_open_climate("${TILE4_ENTITY}", id(tile4_climate_current_temperature).state, id(tile4_climate_target_temperature).state, id(tile4_climate_humidity).state, std::string(id(tile4_climate_mode).state.c_str()));
-            if (std::string("${TILE5_TYPE}") == "climate") sync_open_climate("${TILE5_ENTITY}", id(tile5_climate_current_temperature).state, id(tile5_climate_target_temperature).state, id(tile5_climate_humidity).state, std::string(id(tile5_climate_mode).state.c_str()));
-            if (std::string("${TILE6_TYPE}") == "climate") sync_open_climate("${TILE6_ENTITY}", id(tile6_climate_current_temperature).state, id(tile6_climate_target_temperature).state, id(tile6_climate_humidity).state, std::string(id(tile6_climate_mode).state.c_str()));
+            if (std::string(id(hb_cfg).tile_type(1)) == "climate") sync_open_climate(id(hb_cfg).tile_uid(1), id(tile1_climate_current_temperature).state, id(tile1_climate_target_temperature).state, id(tile1_climate_humidity).state, std::string(id(tile1_climate_mode).state.c_str()));
+            if (std::string(id(hb_cfg).tile_type(2)) == "climate") sync_open_climate(id(hb_cfg).tile_uid(2), id(tile2_climate_current_temperature).state, id(tile2_climate_target_temperature).state, id(tile2_climate_humidity).state, std::string(id(tile2_climate_mode).state.c_str()));
+            if (std::string(id(hb_cfg).tile_type(3)) == "climate") sync_open_climate(id(hb_cfg).tile_uid(3), id(tile3_climate_current_temperature).state, id(tile3_climate_target_temperature).state, id(tile3_climate_humidity).state, std::string(id(tile3_climate_mode).state.c_str()));
+            if (std::string(id(hb_cfg).tile_type(4)) == "climate") sync_open_climate(id(hb_cfg).tile_uid(4), id(tile4_climate_current_temperature).state, id(tile4_climate_target_temperature).state, id(tile4_climate_humidity).state, std::string(id(tile4_climate_mode).state.c_str()));
+            if (std::string(id(hb_cfg).tile_type(5)) == "climate") sync_open_climate(id(hb_cfg).tile_uid(5), id(tile5_climate_current_temperature).state, id(tile5_climate_target_temperature).state, id(tile5_climate_humidity).state, std::string(id(tile5_climate_mode).state.c_str()));
+            if (std::string(id(hb_cfg).tile_type(6)) == "climate") sync_open_climate(id(hb_cfg).tile_uid(6), id(tile6_climate_current_temperature).state, id(tile6_climate_target_temperature).state, id(tile6_climate_humidity).state, std::string(id(tile6_climate_mode).state.c_str()));
           }
 
           {

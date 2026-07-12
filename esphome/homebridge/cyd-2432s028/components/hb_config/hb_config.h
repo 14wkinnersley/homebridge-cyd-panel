@@ -36,6 +36,8 @@ class HbConfig : public Component, public AsyncWebHandler {
   std::string tile_type(int i) { return valid_(i) ? this->tiles_[i - 1].type : std::string(); }
   bool tile_enabled(int i) { return valid_(i) && this->tiles_[i - 1].enabled; }
   bool configured() { return !this->url_.empty(); }
+  // Bumped on every (re)parse so YAML can detect config changes and re-apply live.
+  uint32_t generation() { return this->gen_; }
 
  protected:
   static constexpr size_t CFG_MAX = 2048;
@@ -51,6 +53,7 @@ class HbConfig : public Component, public AsyncWebHandler {
   bool pending_save_{false};
   std::string room_, url_, user_, pass_;
   TileCfg tiles_[6];
+  uint32_t gen_{0};
 };
 
 }  // namespace hb_config

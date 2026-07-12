@@ -154,6 +154,7 @@ void HbConfig::parse_() {
     }
     return true;
   });
+  this->gen_++;  // signal YAML to re-apply room/titles/visibility
 }
 
 }  // namespace hb_config
